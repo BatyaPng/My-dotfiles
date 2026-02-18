@@ -1,23 +1,10 @@
-[window]
-# Set to 1.0 for solid black, or lower (e.g., 0.9) for slight transparency
-opacity = 1.0
-# Adds the margins on the edges you requested
-padding = { x = 15, y = 15 }
-
-[font]
-size = 13
-builtin_box_drawing = true
-
-[font.normal]
-family = "JetBrains Mono"
-style = "Regular"
-
 [colors.primary]
-# Pure black background
+# This sets the main window background to pure black
 background = '#000000'
 foreground = '#fff1f3'
 
 [colors.normal]
+# It is best practice to match the terminal 'black' to your background
 black   = '#000000'
 red     = '#fd6883'
 green   = '#adda78'
@@ -27,17 +14,20 @@ magenta = '#a8a9eb'
 cyan    = '#85dacc'
 white   = '#fff1f3'
 
-[colors.bright]
-black   = '#72696a'
-red     = '#fd6883'
-green   = '#adda78'
-yellow  = '#f9cc6c'
-blue    = '#f38d70'
-magenta = '#a8a9eb'
-cyan    = '#85dacc'
-white   = '#fff1f3'
+[font]
+builtin_box_drawing = true
+size = 13
+
+[font.normal]
+family = "JetBrains Mono"
+style = "Regular"
+
+[window]
+opacity = 1.0
+# Add space (in pixels) between the text and the window edge
+padding = { x = 15, y = 15 }
 
 [keyboard]
 bindings = [
-  { key = "F11", action = "ToggleFullscreen" }
+    { key = "F11", action = "ToggleFullscreen" }
 ]
