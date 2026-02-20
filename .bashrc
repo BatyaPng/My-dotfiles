@@ -116,3 +116,9 @@ if ! shopt -oq posix; then
   fi
 fi
 
+# set brightness ext monitor
+br() { ddcutil setvcp 10 "$1"; }
+
+# pbcopy
+alias pbcopy='wl-copy'
+
