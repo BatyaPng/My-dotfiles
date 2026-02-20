@@ -116,5 +116,3 @@ if ! shopt -oq posix; then
   fi
 fi
 
-# nvim
-export PATH="$PATH:~/Tools/Nvim/bin"
