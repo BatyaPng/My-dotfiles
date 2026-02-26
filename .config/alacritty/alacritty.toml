@@ -1,18 +1,34 @@
 [colors.primary]
-# This sets the main window background to pure black
-background = '#000000'
-foreground = '#fff1f3'
+background = '#2d2a2e'
+foreground = '#fcfcfa'
 
 [colors.normal]
-# It is best practice to match the terminal 'black' to your background
-black   = '#000000'
-red     = '#fd6883'
-green   = '#adda78'
-yellow  = '#f9cc6c'
-blue    = '#f38d70'
-magenta = '#a8a9eb'
-cyan    = '#85dacc'
-white   = '#fff1f3'
+black =   '#2d2a2e'
+red =     '#ff6188'
+green =   '#a9dc76'
+yellow =  '#ffd866'
+blue =    '#fc9867'
+magenta = '#ab9df2'
+cyan =    '#78dce8'
+white =   '#fcfcfa'
+
+[colors.bright]
+black =   '#727072'
+red =     '#ff6188'
+green =   '#a9dc76'
+yellow =  '#ffd866'
+blue =    '#fc9867'
+magenta = '#ab9df2'
+cyan =    '#78dce8'
+white =   '#fcfcfa'
+
+[colors.cursor]
+text = '#2d2a2e'
+cursor = '#fcfcfa'
+
+[colors.selection]
+text = '#2d2a2e'
+background = '#fcfcfa'
 
 [font]
 builtin_box_drawing = true
