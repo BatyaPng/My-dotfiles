@@ -123,3 +123,5 @@ br() { ddcutil setvcp 10 "$1"; }
 alias pbcopy='wl-copy'
 
 export EDITOR="nvim"
+
+export PATH="$PATH:~/Tools/Scripts"
