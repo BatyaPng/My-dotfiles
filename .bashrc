@@ -135,3 +135,5 @@ function y() {
 	fi
 	rm -f -- "$tmp"
 }
+
+export QSYS_ROOTDIR="/home/oleg-linux/Tools/Quartus/23.1std/quartus/sopc_builder/bin"
