@@ -11,7 +11,13 @@ vim.g.mapleader = ' '
 vim.cmd('nmap <leader>c "+d')
 
 -- save
-vim.cmd('nmap <leader>s :w<cr>')
+if vim.g.vscode then
+    -- When inside VS Code, use the native VS Code save action
+    vim.keymap.set('n', '<leader>s', "<Cmd>call VSCodeNotify('workbench.action.files.save')<CR>", { noremap = true, silent = true })
+else
+    -- Fallback for when you use standard Neovim in the terminal
+    vim.keymap.set('n', '<leader>s', ':w<CR>', { noremap = true, silent = true })
+end
 
 -- close
 vim.cmd('nmap <leader>w :q<cr>')
