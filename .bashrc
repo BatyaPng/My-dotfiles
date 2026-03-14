@@ -139,3 +139,7 @@ function y() {
 # quartus
 export QSYS_ROOTDIR="/home/oleg-linux/Tools/Quartus/23.1std/quartus/bin"
 export PATH="$PATH:$QSYS_ROOTDIR"
+
+# git
+alias g='git'
+

@@ -1,6 +1,12 @@
 [alias]
     st = status
     suir = submodule update --init --recursive
+    rom = pull --rebase origin main
+    cam = commit -a -m
+    cm = commit -m
+    c = checkout
+    ph = push
+    a = add
 [core]
     excludesfile = ~/.gitignore_global
     editor = nvim
