@@ -1,0 +1,6 @@
+*.o
+*.vcd
+db/
+incremental_db/
+output/
+simulation/
