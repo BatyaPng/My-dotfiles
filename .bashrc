@@ -120,7 +120,7 @@ fi
 br() { ddcutil setvcp 10 "$1"; }
 
 # pbcopy
-alias pbcopy='wl-copy'
+alias pbcopy='xclip -selection clipboard'
 
 export EDITOR="nvim"
 
@@ -135,10 +135,6 @@ function y() {
 	fi
 	rm -f -- "$tmp"
 }
-
-# quartus
-export QSYS_ROOTDIR="/home/oleg-linux/Tools/Quartus/23.1std/quartus/bin"
-export PATH="$PATH:$QSYS_ROOTDIR"
 
 # git
 alias g='git'
