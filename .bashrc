@@ -146,3 +146,6 @@ export PATH="$PATH:/home/oleg-linux/Tools/Questa/questa_fse/bin"
 alias l='lazygit'
 
 export PATH="$HOME/.local/bin:$PATH"
+# nvim
+export PATH="$PATH:~/Tools/Nvim/bin"
+
