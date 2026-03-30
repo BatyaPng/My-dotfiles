@@ -139,3 +139,6 @@ function y() {
 # git
 alias g='git'
 
+# nvim
+export PATH="$PATH:~/Tools/Nvim/bin"
+
