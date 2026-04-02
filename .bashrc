@@ -122,8 +122,6 @@ br() { ddcutil setvcp 10 "$1"; }
 # pbcopy
 alias pbcopy='xclip -selection clipboard'
 
-export EDITOR="nvim"
-
 export PATH="$PATH:~/Tools/Scripts"
 
 # yazi
@@ -140,5 +138,7 @@ function y() {
 alias g='git'
 
 # nvim
-export PATH="$PATH:~/Tools/Nvim/bin"
+# Need to create symlink: sudo ln -s $(which nvim) /usr/local/bin/nvim
+export EDITOR="nvim"
+export VISUAL="nvim"
 
