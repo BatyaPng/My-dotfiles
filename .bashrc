@@ -145,5 +145,6 @@ alias g='git'
 
 # questa license
 export LM_LICENSE_FILE=/home/oleg-linux/.license/questa.dat
-alias vsim='/home/oleg-linux/Tools/Questa/questa_fse/bin/vsim'
+export PATH="$PATH:/home/oleg-linux/Tools/Questa/questa_fse/bin"
+
 
