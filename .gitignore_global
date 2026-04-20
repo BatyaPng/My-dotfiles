@@ -6,3 +6,4 @@ output/
 simulation/
 .qsys_edit/
 greybox_tmp/
+*.qws
