@@ -4,3 +4,5 @@ db/
 incremental_db/
 output/
 simulation/
+.qsys_edit/
+greybox_tmp/
