@@ -97,9 +97,14 @@ vim.api.nvim_create_autocmd("CmdlineLeave", {
   })
 
 -- Vim-easy-align
-vim.cmd('xmap ga <Plug>(EasyAlign)')
+vim.cmd('xmap gaa <Plug>(EasyAlign)')
 
-vim.cmd('nmap ga <Plug>(EasyAlign)')
+vim.cmd('nmap gaa <Plug>(EasyAlign)')
+
+vim.keymap.set('v', 'ga:', ":EasyAlign /\\\[[^\\\]]*\\\]/ { 'da': 'r' }<CR>", { desc = 'EasyAlign: brackets with right alignment' })
+vim.keymap.set('v', 'gap', ":EasyAlign /\\ze[io]_/ { 'lm': 0 }<CR>", { desc = 'EasyAlign: lookahead before i_ or o_' })
+vim.keymap.set('v', 'ga(', ":EasyAlign /(/ {'lm':1, 'rm':0}<CR>", { desc = 'EasyAlign: open parenthesis' })
+vim.keymap.set('v', 'ga)', ":EasyAlign /)/ {'lm':0, 'rm':0}<CR>", { desc = 'EasyAlign: close parenthesis' })
 
 -- Assign search
 vim.keymap.set('n', '<leader>a', function()
@@ -114,3 +119,4 @@ vim.keymap.set('n', '<leader>a', function()
   -- jump to the next match
   vim.cmd('normal! n')
 end, { noremap = true, silent = true })
+
