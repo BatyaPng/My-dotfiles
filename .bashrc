@@ -90,7 +90,6 @@ fi
 # some more ls aliases
 alias ll='ls -alF'
 alias la='ls -A'
-alias l='ls -CF'
 
 # Add an "alert" alias for long running commands.  Use like so:
 #   sleep 10; alert
@@ -147,4 +146,6 @@ alias g='git'
 export LM_LICENSE_FILE=/home/oleg-linux/.license/questa.dat
 export PATH="$PATH:/home/oleg-linux/Tools/Questa/questa_fse/bin"
 
+# lazygit
+alias l='lazygit'
 
