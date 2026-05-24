@@ -26,7 +26,6 @@
 (deflayermap (default)
   caps esc
   lsft caps
-  \ ret
 
   a (tap-hold $tt $ht a lctl)
   s (tap-hold $tt $ht s lmet)
