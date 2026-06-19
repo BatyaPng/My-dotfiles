@@ -53,20 +53,6 @@ vim.opt.ignorecase = true
 -- disable "ignorecase" option if the search pattern contains upper case characters
 vim.opt.smartcase = true
 
--- firenvim extension
-vim.g.firenvim_config = {
-    globalSettings = { alt = "all" },
-    localSettings = {
-        [".*"] = {
-            cmdline  = "neovim",
-            content  = "text",
-            priority = 0,
-            selector = "textarea",
-            takeover = "never"
-        }
-    }
-}
-
 -- keep clean cmd after use
 vim.api.nvim_create_autocmd("CmdlineLeave", {
     callback = function()
