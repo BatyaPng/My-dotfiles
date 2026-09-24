@@ -2,5 +2,9 @@
 workspace.json
 workspace-mobile.json
 
+# Plugins: track only remotely-save
+plugins/*
+!plugins/remotely-save/
+
 # Contains sync credentials
 plugins/remotely-save/data.json
