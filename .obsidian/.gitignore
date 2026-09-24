@@ -2,9 +2,13 @@
 workspace.json
 workspace-mobile.json
 
-# Plugins: track only remotely-save
-plugins/*
-!plugins/remotely-save/
+# Plugins: track only settings, not code...
+plugins/*/*
+!plugins/*/data.json
+!plugins/*/manifest.json
+
+# ...except remotely-save (custom build), tracked in full
+!plugins/remotely-save/*
 
 # Contains sync credentials
 plugins/remotely-save/data.json
