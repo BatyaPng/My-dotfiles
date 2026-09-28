@@ -1,0 +1,6 @@
+#!/bin/sh
+# Regenerate VS Code extension list and include it in the commit
+if command -v code >/dev/null 2>&1; then
+    code --list-extensions > .config/Code/extensions.txt
+    git add .config/Code/extensions.txt
+fi
