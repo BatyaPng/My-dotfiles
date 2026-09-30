@@ -3,3 +3,4 @@
 ^/\.stow-local-ignore$
 ^/README.*
 ^/setup
+^/\.stowrc$
