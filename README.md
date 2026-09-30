@@ -18,4 +18,13 @@ systemctl --user enable --now kanata
 `.stowrc` sets `--no-folding`: without it `~/.config/systemd` becomes a symlink
 into the repo and `systemctl --user enable` writes into it.
 
-`.obsidian/` is not stowed: symlink it into the vault manually.
+`.obsidian/` is not stowed, it belongs to the vault `~/Obsidian`:
+
+```sh
+mkdir -p ~/Obsidian && ln -s ~/.dotfiles/.obsidian ~/Obsidian/.obsidian
+```
+
+Only remotely-save is tracked in full. Other plugins keep just their settings,
+so reinstall them from Community plugins (or download `main.js`/`styles.css`
+of the version in `manifest.json`). remotely-save credentials are not in git:
+set them up again in its settings.
