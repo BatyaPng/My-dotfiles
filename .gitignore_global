@@ -1,0 +1,4 @@
+# global gitignore
+.nvimlog
+*.swp
+.DS_Store

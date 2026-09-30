@@ -28,9 +28,6 @@ vim.keymap.set('n', '<leader>d', 'gd')
 -- second word
 vim.keymap.set('n', '<leader>t', '0w')
 
--- paste without overwriting
-vim.keymap.set('v', 'p', 'P')
-
 -- clear search highlighting
 vim.keymap.set('n', '<Esc>', ':nohlsearch<cr>')
 

@@ -19,7 +19,7 @@ builtin_box_drawing = true
 size = 13
 
 [font.normal]
-family = "JetBrains Mono"
+family = "JetBrainsMono Nerd Font Mono"
 style = "Regular"
 
 [window]

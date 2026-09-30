@@ -3,7 +3,7 @@
     suir = submodule update --init --recursive
 [core]
     excludesfile = ~/.gitignore_global
-    editor = ~/Tools/Nvim/bin/nvim
+    editor = nvim
 [user]
     email = olegberezin2002@gmail.com
     name = Oleg Berezin
