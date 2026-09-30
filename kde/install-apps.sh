@@ -30,16 +30,11 @@ repo_gpgcheck=0
 EOF
 fi
 
-# RPM Fusion (Telegram)
-if ! rpm -q rpmfusion-free-release > /dev/null; then
-    sudo dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
-fi
+sudo dnf install -y firefox alacritty code throne dolphin
 
-sudo dnf install -y firefox alacritty code telegram-desktop throne dolphin
-
-# Obsidian
+# Obsidian, Telegram
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install -y flathub md.obsidian.Obsidian
+flatpak install -y flathub md.obsidian.Obsidian org.telegram.desktop
 
 # NoMachine has no repo; install from a downloaded rpm
 if ! rpm -q nomachine > /dev/null; then
