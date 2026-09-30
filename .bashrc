@@ -8,6 +8,11 @@ case $- in
       *) return;;
 esac
 
+# Source global definitions (Fedora)
+if [ -f /etc/bashrc ]; then
+    . /etc/bashrc
+fi
+
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
 HISTCONTROL=ignoreboth
@@ -29,6 +34,7 @@ shopt -s checkwinsize
 
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+[ -x /usr/bin/lesspipe.sh ] && export LESSOPEN="||/usr/bin/lesspipe.sh %s"
 
 # set variable identifying the chroot you work in (used in the prompt below)
 if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
@@ -119,9 +125,9 @@ fi
 br() { ddcutil setvcp 10 "$1"; }
 
 # pbcopy
-alias pbcopy='xclip -selection clipboard'
+alias pbcopy='wl-copy'
 
-export PATH="$PATH:~/Tools/Scripts"
+export PATH="$PATH:$HOME/Tools/Scripts"
 
 # yazi
 function y() {
@@ -137,8 +143,8 @@ function y() {
 alias g='git'
 
 # questa license
-export LM_LICENSE_FILE=/home/oleg-linux/.license/questa.dat
-export PATH="$PATH:/home/oleg-linux/Tools/Questa/questa_fse/bin"
+export LM_LICENSE_FILE=$HOME/.license/questa.dat
+export PATH="$PATH:$HOME/Tools/Questa/questa_fse/bin"
 
 # lazygit
 alias l='lazygit'

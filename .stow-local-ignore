@@ -1,0 +1,13 @@
+\.git
+^/\.gitignore$
+^/\.stowrc$
+^/\.stow-local-ignore$
+^/README.*
+^/setup
+^/kde
+# obsidian settings belong to a vault, not $HOME
+^/\.obsidian
+# plasma rewrites these files; kde/sync.sh applies them instead
+^/\.config/plasma-org\.kde\.plasma\.desktop-appletsrc
+^/\.config/kglobalshortcutsrc
+^/\.config/spectaclerc
