@@ -139,6 +139,10 @@ function y() {
 	rm -f -- "$tmp"
 }
 
+# quartus
+export QSYS_ROOTDIR="$HOME/Tools/Quartus/23.1std/quartus/bin"
+export PATH="$PATH:$QSYS_ROOTDIR"
+
 # git
 alias g='git'
 
