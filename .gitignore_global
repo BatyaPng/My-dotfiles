@@ -1,0 +1,15 @@
+*.o
+*.vcd
+db/
+incremental_db/
+output/
+simulation/
+.qsys_edit/
+greybox_tmp/
+*.qws
+work/
+transcript
+*vsim*
+*bin*
+*out*
+*map*
