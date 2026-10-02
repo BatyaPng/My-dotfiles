@@ -9,7 +9,7 @@
     a = add
 [core]
     excludesfile = ~/.gitignore_global
-    editor = nvim
+    editor = ~/Tools/Nvim/bin/nvim
 [user]
     email = olegberezin2002@gmail.com
     name = Oleg Berezin

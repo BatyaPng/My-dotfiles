@@ -151,6 +151,7 @@ alias l='lazygit'
 
 export PATH="$HOME/.local/bin:$PATH"
 # nvim
+export PATH="$PATH:$HOME/Tools/Nvim/bin"
 export EDITOR="nvim"
 export VISUAL="nvim"
 
