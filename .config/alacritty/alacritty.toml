@@ -1,0 +1,61 @@
+[colors.primary]
+background = '#121415'
+foreground = '#f2fffc'
+
+[colors.normal]
+black   = '#121415'
+red     = '#ff6188'
+green   = '#a9dc76'
+yellow  = '#ffd866'
+blue    = '#fc9867' # ANSI Blue slot (Outputs Orange, 5th block)
+magenta = '#78dce8' # ANSI Magenta slot (Outputs Blue, 6th block)
+cyan    = '#ab9df2' # ANSI Cyan slot (Outputs Purple, 7th block)
+white   = '#f2fffc'
+
+[colors.bright]
+black   = '#5b5d5f'
+red     = '#ff6188'
+green   = '#a9dc76'
+yellow  = '#ffd866'
+blue    = '#fc9867'
+magenta = '#78dce8' 
+cyan    = '#ab9df2'
+white   = '#f2fffc'
+
+[colors.cursor]
+text = '#121415'
+cursor = '#f2fffc'
+
+[colors.selection]
+text = '#121415'
+background = '#f2fffc'
+
+[font]
+builtin_box_drawing = true
+size = 13
+
+[font.normal]
+family = "JetBrainsMono Nerd Font"
+style = "Regular"
+
+[font.bold]
+family = "JetBrainsMono Nerd Font"
+style = "Bold"
+
+[font.italic]
+family = "JetBrainsMono Nerd Font"
+style = "Italic"
+
+[font.bold_italic]
+family = "JetBrainsMono Nerd Font"
+style = "Bold Italic"
+
+[window]
+opacity = 1.0
+# Add space (in pixels) between the text and the window edge
+padding = { x = 15, y = 15 }
+
+[keyboard]
+bindings = [
+    { key = "F11", action = "ToggleFullscreen" }
+]
