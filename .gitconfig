@@ -7,7 +7,10 @@
     c = checkout
     ph = push
     a = add
+    phf = push --force-with-lease
     tomain = "!f(){ git diff --cached | git -C ~/.dotfiles-main apply -3 && git -C ~/.dotfiles-main commit -m \"$1\" && git rebase --autostash main && git push origin main; }; f"
+[push]
+    useForceIfIncludes = true
 [core]
     excludesfile = ~/.gitignore_global
     editor = nvim
