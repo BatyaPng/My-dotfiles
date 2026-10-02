@@ -1,0 +1,84 @@
+(defsrc
+  esc  f1   f2   f3   f4   f5   f6   f7   f8   f9   f10  f11  f12
+  grv  1    2    3    4    5    6    7    8    9    0    -    =   bspc
+  tab  q    w    e    r    t    y    u    i    o    p    [    ]   \
+  caps a    s    d    f    g    h    j    k    l    ;    '    ret
+  lsft z    x    c    v    b    n    m    ,    .    /    rsft
+  lctl lmet lalt           spc            ralt rmet cmp  rctl
+)
+
+(defvar
+  tap-timeout 100
+  hold-timeout 150
+
+  tt $tap-timeout
+  ht $hold-timeout
+)
+
+(deftemplate triple-tap-layer-switch (key layer-name)
+  $key (tap-dance 200 (
+    $key
+    (macro $key $key)
+    (layer-switch $layer-name)
+  ))
+)
+
+(deflayermap (default)
+  caps esc
+  lsft caps
+  \ ret
+
+  a (tap-hold $tt $ht a lctl)
+  s (tap-hold $tt $ht s lmet)
+  d (tap-hold $tt $ht d lalt)
+  f (tap-hold $tt $ht f lsft)
+  j (tap-hold $tt $ht j rsft)
+  k (tap-hold $tt $ht k lalt)
+  l (tap-hold $tt $ht l rmet)
+  ; (tap-hold $tt $ht ; rctl)
+
+  lalt (tap-hold $tt $ht alt (layer-while-held navig))
+  spc (tap-hold $tt $ht spc (layer-while-held num))
+)
+
+(deflayermap (num)
+  caps -
+  a (tap-hold $tt $ht 1 lctl)
+  s (tap-hold $tt $ht 2 lmet)
+  d (tap-hold $tt $ht 3 lalt)
+  f (tap-hold $tt $ht 4 lsft)
+  g 5
+  h 6
+  j (tap-hold $tt $ht 7 rsft)
+  k (tap-hold $tt $ht 8 lalt)
+  l (tap-hold $tt $ht 9 rmet)
+  ; (tap-hold $tt $ht 0 rctl)
+  ' =
+
+  q f1
+  w f2
+  e f3
+  r f4
+  t f5
+  y f6
+  u f7
+  i f8
+  o f9
+  p f10
+  [ f11
+  ] f12
+)
+
+(deflayermap (navig)
+  j down
+  k up
+  h left
+  l right
+  ; bspc
+
+  u pgdn
+  i pgup
+  y home
+  o end
+)
+
