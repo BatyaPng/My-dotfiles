@@ -146,7 +146,7 @@
     },
     "remote.autoForwardPortsSource": "hybrid",
     "editor.lineNumbers": "relative",
-    "chat.commandCenter.enabled": false,
+    "chat.agentsControl.enabled": "hidden",
     "extensions.experimental.affinity": {
         "asvetliakov.vscode-neovim": 1
     },
