@@ -154,6 +154,7 @@ alias obsidian='flatpak run md.obsidian.Obsidian --disable-gpu >/dev/null 2>&1 &
 
 export PATH="$HOME/.local/bin:$PATH"
 # nvim
+export PATH="$PATH:$HOME/Tools/Nvim/bin"
 export EDITOR="nvim"
 export VISUAL="nvim"
 
