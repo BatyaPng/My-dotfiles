@@ -259,4 +259,13 @@
     "workbench.experimental.modernUI": false,
     "workbench.enableExperiments": false,
     "chat.titleBar.signIn.enabled": false,
+    "remote.SSH.remotePlatform": {
+        "coder-vscode.coder.dev.syntacore.com--oberezin--rtl": "linux",
+        "coder-vscode.coder.dev.syntacore.com--oberezin--rtl--main": "linux",
+        "coder-vscode.coder.dev.syntacore.com--oberezin--rtl.main": "linux"
+    },
+    "verilog.linting.linter": "verilator",
+    "verilog.linting.path": "/usr/local/bin/verilator",
+    "vscode-neovim.neovimExecutablePaths.linux": "/usr/local/bin/nvim",
+    "vscode-neovim.neovimInitVimPaths.linux": "/home/baikal.int/o.berezin/.dotfiles/.config/nvim/init.lua",
 }
