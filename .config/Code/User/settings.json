@@ -259,4 +259,5 @@
     "workbench.experimental.modernUI": false,
     "workbench.enableExperiments": false,
     "chat.titleBar.signIn.enabled": false,
+    "chat.titleBar.openInAgentsWindow.enabled": false,
 }
