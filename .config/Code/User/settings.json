@@ -256,5 +256,7 @@
     "files.insertFinalNewline": true,
     "workbench.browser.showInTitleBar": false,
     "workbench.layoutControl.enabled": false,
+    "workbench.experimental.modernUI": false,
+    "workbench.enableExperiments": false,
     "chat.titleBar.signIn.enabled": false,
 }
