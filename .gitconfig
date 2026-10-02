@@ -7,7 +7,7 @@
     c = checkout
     ph = push
     a = add
-    tomain = "!f(){ git diff --cached | git -C ~/.dotfiles-main apply -3 && git -C ~/.dotfiles-main commit -m \"$1\" && git rebase --autostash main; }; f"
+    tomain = "!f(){ git diff --cached | git -C ~/.dotfiles-main apply -3 && git -C ~/.dotfiles-main commit -m \"$1\" && git rebase --autostash main && git push origin main; }; f"
 [core]
     excludesfile = ~/.gitignore_global
     editor = nvim
