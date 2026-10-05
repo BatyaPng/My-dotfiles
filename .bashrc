@@ -125,7 +125,7 @@ fi
 br() { ddcutil setvcp 10 "$1"; }
 
 # pbcopy
-alias pbcopy='wl-copy'
+alias pbcopy='xclip -selection clipboard'
 
 export PATH="$PATH:$HOME/Tools/Scripts"
 
