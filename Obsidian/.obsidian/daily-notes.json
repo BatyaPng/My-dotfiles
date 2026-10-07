@@ -1,4 +1,4 @@
 {
-  "format": "DD-MM-YY",
+  "format": "YY-MM-DD",
   "folder": "periodic/daily"
 }
