@@ -15,7 +15,7 @@ immutability=1
 lastScreen=0
 location=0
 plugin=org.kde.plasma.folder
-wallpaperplugin=org.kde.image
+wallpaperplugin=com.github.catsout.wallpaperEngineKde
 
 [Containments][26][ConfigDialog]
 DialogHeight=1008
@@ -28,7 +28,9 @@ positions={"1024x768":["1","9"],"1920x1080":["1","17"]}
 sortMode=-1
 
 [Containments][26][Wallpaper][com.github.catsout.wallpaperEngineKde][General]
-SteamLibraryPath[$e]=file:$HOME/.local/share/Steam
+SteamLibraryPath=file:///home/oleg-linux/.local/share/Steam
+WallpaperSource[$e]=file:$HOME/.local/share/Steam/steamapps/workshop/content/431960/3352342968/farming_frogs.mp4+video
+WallpaperWorkShopId=3352342968
 
 [Containments][26][Wallpaper][org.kde.image][General]
 Image=file:///usr/share/wallpapers/SafeLanding/
@@ -60,6 +62,13 @@ favoritesPortedToKAstats=true
 [Containments][27][Applets][29]
 immutability=1
 plugin=org.kde.plasma.pager
+
+[Containments][27][Applets][29][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
+[Containments][27][Applets][29][Configuration][General]
+showWindowOutlines=false
 
 [Containments][27][Applets][30]
 immutability=1
@@ -170,7 +179,7 @@ DialogHeight=630
 DialogWidth=810
 
 [Containments][27][Applets][32][General]
-disabledStatusNotifiers=TelegramDesktop
+disabledStatusNotifiers=TelegramDesktop,Throne
 extraItems=org.kde.kdeconnect,org.kde.plasma.bluetooth,org.kde.plasma.brightness,org.kde.plasma.cameraindicator,org.kde.plasma.keyboardindicator,org.kde.plasma.manage-inputmethod,org.kde.plasma.networkmanagement,org.kde.plasma.notifications,org.kde.plasma.printmanager,org.kde.plasma.vault,org.kde.plasma.weather,org.kde.kscreen,org.kde.plasma.volume,org.kde.plasma.keyboardlayout,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.battery,org.kde.plasma.mediacontroller
 hiddenItems=max,NoMachineMonitor,kded6,Discover Notifier_org.kde.DiscoverNotifier,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.battery,org.kde.plasma.mediacontroller
 knownItems=org.kde.kdeconnect,org.kde.plasma.battery,org.kde.plasma.bluetooth,org.kde.plasma.brightness,org.kde.plasma.cameraindicator,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.keyboardindicator,org.kde.plasma.keyboardlayout,org.kde.plasma.manage-inputmethod,org.kde.plasma.networkmanagement,org.kde.plasma.notifications,org.kde.plasma.printmanager,org.kde.plasma.vault,org.kde.plasma.weather,org.kde.kscreen,org.kde.plasma.mediacontroller,org.kde.plasma.volume

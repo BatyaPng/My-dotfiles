@@ -7,6 +7,7 @@ useReleaseToCapture=true
 captureMode=5
 
 [ImageSave]
+lastImageSaveLocation=file:///tmp/claude-1000/-home-oleg-linux/d177ca5c-9ce6-4e29-b712-e8a103c17fbd/scratchpad/shot2.png
 translatedScreenshotsFolder=Screenshots
 
 [VideoSave]
