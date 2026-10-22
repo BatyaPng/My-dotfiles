@@ -161,7 +161,7 @@ PROXY_STATE_FILE="$HOME/.proxy_enabled"
 
 _proxy_set() {
   export http_proxy="http://$PROXY_ADDR" https_proxy="http://$PROXY_ADDR"
-  export all_proxy="socks5://$PROXY_ADDR" no_proxy="localhost,127.0.0.1,::1"
+  export all_proxy="socks5://$PROXY_ADDR" no_proxy="localhost,127.0.0.1,::1,.baikal.int"
   export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy ALL_PROXY=$all_proxy NO_PROXY=$no_proxy
 }
 
