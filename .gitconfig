@@ -8,7 +8,7 @@
     ph = push
     a = add
     phf = push --force-with-lease
-    tomain = "!f(){ git diff --cached | git -C ~/.dotfiles-main apply -3 && git -C ~/.dotfiles-main commit -m \"$1\" && git rebase --autostash main && git push origin main; }; f"
+    tomain = "!f(){ case \"$1\" in ''|-h|--help) echo 'usage: git tomain <message>'; echo 'Commit staged changes to main (in ~/.dotfiles-main), rebase this branch on main and push main.'; return 1;; esac; git diff --cached | git -C ~/.dotfiles-main apply -3 && git -C ~/.dotfiles-main commit -m \"$1\" && git rebase --autostash main && git push origin main; }; f"
 [push]
     useForceIfIncludes = true
 [core]
