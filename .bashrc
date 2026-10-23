@@ -201,3 +201,12 @@ proxy_status() {
 
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set
+
+# Remember the forwarded X display of the latest `ssh -Y` login for ~/.local/bin/xclip
+if [[ -n $SSH_CONNECTION && $DISPLAY == localhost:* && -z $TMUX ]]; then
+    mkdir -p ~/.cache && printf "%s\n" "$DISPLAY" > ~/.cache/ssh-display
+fi
+
+
+# Added by Antigravity CLI installer
+export PATH="/home/baikal.int/o.berezin/.local/bin:$PATH"
