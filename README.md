@@ -86,7 +86,16 @@ systemctl --user enable --now kanata
 
 ## Obsidian
 
-`Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Only
-remotely-save is tracked in full; other plugins keep just their settings, so
-reinstall them from Community plugins. remotely-save credentials are not in
+`Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Unlike the
+rest, the whole directory is one symlink, so settings files Obsidian creates
+later (new plugins, snippets) land in the repo; its `.gitignore` drops
+volatile state, plugin code and secrets. Create the link before `stow .`
+(stow keeps it as is):
+
+```sh
+ln -s ../.dotfiles/Obsidian/.obsidian ~/Obsidian/.obsidian
+```
+
+Only remotely-save is tracked in full; other plugins keep just their
+settings, so reinstall them from Community plugins. remotely-save credentials are not in
 git: set them up again in its settings.

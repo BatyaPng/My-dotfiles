@@ -7,6 +7,10 @@ plugins/*/*
 !plugins/*/data.json
 !plugins/*/manifest.json
 
+# Themes: same, code is downloaded from Community themes
+themes/*/*
+!themes/*/manifest.json
+
 # ...except remotely-save (custom build), tracked in full
 !plugins/remotely-save/*
 
