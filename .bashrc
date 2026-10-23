@@ -1,3 +1,8 @@
+# >>> Baikal OpenCode PATH >>>
+if [ -r '/home/baikal.int/o.berezin/.config/opencode/env.sh' ]; then
+    . '/home/baikal.int/o.berezin/.config/opencode/env.sh'
+fi
+# <<< Baikal OpenCode PATH <<<
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
