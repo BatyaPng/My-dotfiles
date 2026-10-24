@@ -170,6 +170,11 @@ _proxy_unset() {
 }
 
 proxy_on() {
+  if [ "$1" = "-t" ]; then
+    _proxy_set
+    echo "Proxy on ($PROXY_ADDR), this session only"
+    return
+  fi
   touch "$PROXY_STATE_FILE"
   _proxy_set
   echo "Proxy on ($PROXY_ADDR), also for new terminals"
