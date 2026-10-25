@@ -57,5 +57,6 @@ padding = { x = 15, y = 15 }
 
 [keyboard]
 bindings = [
-    { key = "F11", action = "ToggleFullscreen" }
+    { key = "F11", action = "ToggleFullscreen" },
+    { key = "T", mods = "Control", action = "SpawnNewInstance" }
 ]
