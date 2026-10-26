@@ -149,6 +149,9 @@ export PATH="$PATH:$HOME/Tools/Questa/questa_fse/bin"
 # lazygit
 alias l='lazygit'
 
+# obsidian (flatpak); no GPU so it works over ssh X forwarding
+alias obsidian='flatpak run md.obsidian.Obsidian --disable-gpu >/dev/null 2>&1 &'
+
 export PATH="$HOME/.local/bin:$PATH"
 # nvim
 export EDITOR="nvim"
