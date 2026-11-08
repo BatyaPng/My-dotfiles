@@ -9,14 +9,35 @@ RUN="${XDG_RUNTIME_DIR:-/tmp}"
 SOCK="$RUN/claude-proxy-$$.sock"
 LAN_SOCK="$RUN/claude-lan-$$.sock"
 BRIDGE="$(dirname "$(readlink -f "$0")")/claude-lan-bridge"
+# Root-owned files look owned by nobody inside the namespace, and ssh refuses
+# such included configs, so each file ssh_config includes is replaced by a copy
+# we own.
+ssh_includes() {  # FILE DEPTH: FILE and every file it includes
+  echo "$1"
+  [ "$2" -lt 5 ] || return
+  local inc g
+  for inc in $(awk 'tolower($1) == "include" { for (i = 2; i <= NF; i++) print $i }' "$1" 2>/dev/null); do
+    [[ $inc == /* ]] || inc="/etc/ssh/$inc"
+    for g in $inc; do [ -f "$g" ] && ssh_includes "$g" $(($2 + 1)); done
+  done
+}
+SSH_D="$RUN/claude-ssh-$$"
+SSH_BIND=()
+if [ -f /etc/ssh/ssh_config ] && mkdir -m 700 "$SSH_D"; then
+  i=0
+  for f in $(ssh_includes /etc/ssh/ssh_config 0 | xargs -r readlink -f | sort -u); do
+    cp "$f" "$SSH_D/$i" && chmod 644 "$SSH_D/$i" && SSH_BIND+=(--ro-bind "$SSH_D/$i" "$f")
+    i=$((i + 1))
+  done
+fi
 socat -lf /dev/null UNIX-LISTEN:"$SOCK",fork TCP:127.0.0.1:"$PROXY_PORT" &
 PROXY_BRIDGE=$!
 python3 -I "$BRIDGE" outer "$LAN_SOCK" "$LAN_NETS" "$SSH_PORTS" &
 LAN_BRIDGE=$!
-trap 'kill $PROXY_BRIDGE $LAN_BRIDGE 2>/dev/null; rm -f "$SOCK" "$LAN_SOCK"' EXIT
+trap 'kill $PROXY_BRIDGE $LAN_BRIDGE 2>/dev/null; rm -rf "$SOCK" "$LAN_SOCK" "$SSH_D"' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$SOCK" ] && [ -S "$LAN_SOCK" ] && break; sleep 0.1; done
 export LAN_NETS SSH_PORTS LAN_PORT LAN_SOCK SOCK BRIDGE
-bwrap --dev-bind / / --unshare-user --unshare-net --die-with-parent \
+bwrap --dev-bind / / "${SSH_BIND[@]}" --unshare-user --unshare-net --die-with-parent \
   --cap-add CAP_NET_ADMIN --cap-add CAP_NET_BIND_SERVICE \
   --setenv HTTP_PROXY http://127.0.0.1:2080 --setenv HTTPS_PROXY http://127.0.0.1:2080 \
   --setenv http_proxy http://127.0.0.1:2080 --setenv https_proxy http://127.0.0.1:2080 \
