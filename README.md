@@ -160,6 +160,23 @@ devices are kept in `~/.local/state/bt-duo/excluded`, not in git.
 systemctl --user enable --now bt-duo-combine
 ```
 
+## Clipboard over `ssh -Y` (work PC)
+
+The Wayland machines (`pc`, `laptop`) run `clip-bridge`; this side makes
+lps2 use their clipboard, images included (Ctrl+V in Claude Code):
+
+- `.local/bin/xclip` wraps `/usr/bin/xclip` and switches to the display of the
+  latest `ssh -Y` login, which `.bashrc` saves to `~/.cache/ssh-display`. tmux
+  panes and long-running Claude Code sessions keep a stale `DISPLAY=:0`.
+- `.local/bin/x11-unix-relay` (started from `.bashrc` at each `ssh -Y` login)
+  exposes the forwarded TCP display as the Unix socket display `:(N+100)`, so
+  `claude-proxied`, which has no host network, can reach it. This gives the
+  sandboxed Claude Code access to the client's X server.
+- `.local/bin/clip` and `nvim/lua/config/clip_bridge.lua` copy via OSC 52 and
+  the wrapper.
+
+Needs `xclip`, `x11-utils` (`xprop`) and `socat`.
+
 ## Claude Code notifications in tmux
 
 `.claude/hooks/tmux_notify.sh` rings the bell on the Claude pane, so tmux
