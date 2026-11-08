@@ -84,6 +84,19 @@ unzip -o /tmp/kanata.zip kanata_linux_x64 -d /tmp && install -Dm755 /tmp/kanata_
 systemctl --user enable --now kanata
 ```
 
+## Clipboard bridge (Wayland machines)
+
+KWin syncs the X11 and Wayland clipboards only while an X11 window has focus,
+so copies to and from `ssh -Y` sessions (and background X11 apps) get lost.
+`clip-bridge` syncs them both ways, text and images; `clip-x11-watch` reports
+X11 clipboard changes to it. The remote side (`xclip` wrapper on lps2) lives on
+the `work-pc` branch.
+
+```sh
+sudo dnf install -y xclip
+systemctl --user enable --now clip-bridge
+```
+
 ## Obsidian
 
 `Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Unlike the

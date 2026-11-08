@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Two-way clipboard bridge (text + images) between Xwayland (X11 CLIPBOARD) and Wayland.
+# KWin only syncs them while an X11 window has focus, so X11-forwarded apps
+# (ssh -Y lps2 → xclip/xsel) never reach Wayland apps, and vice versa.
+set -u
+dir=${XDG_RUNTIME_DIR:-/tmp}/clip-bridge
+mkdir -p "$dir"
+img_types=(image/png image/jpeg image/webp image/gif image/bmp)
+
+# stdin: available MIME/target names; prints the type to sync, or nothing.
+pick() {
+    local types t
+    types=$(cat)
+    for t in "${img_types[@]}"; do
+        grep -qxF "$t" <<<"$types" && { echo "$t"; return; }
+    done
+    grep -qxE 'UTF8_STRING|STRING|TEXT|text/plain(;.*)?' <<<"$types" && echo text
+}
+
+x_get()  { [[ $1 == text ]] && set -- UTF8_STRING; timeout 10 xclip -sel c -o -t "$1" 2>/dev/null; }
+wl_get() { [[ $1 == text ]] && set -- text; timeout 10 wl-paste -n -t "$1" 2>/dev/null; }
+
+# $1 = direction (x2w|w2x); copies the source clipboard to the other side unless it already matches.
+sync_one() {
+    local from=$1 type src=$dir/$1.src dst=$dir/$1.dst
+    if [[ $from == x2w ]]; then
+        type=$(timeout 5 xclip -sel c -o -t TARGETS 2>/dev/null | pick)
+    else
+        type=$(wl-paste --list-types 2>/dev/null | pick)
+    fi
+    [[ -z $type ]] && return
+    if [[ $from == x2w ]]; then x_get "$type" >"$src"; wl_get "$type" >"$dst"
+    else wl_get "$type" >"$src"; x_get "$type" >"$dst"; fi
+    [[ -s $src ]] || return
+    cmp -s "$src" "$dst" && return
+    if [[ $from == x2w ]]; then
+        [[ $type == text ]] && wl-copy <"$src" || wl-copy -t "$type" <"$src"
+    else
+        [[ $type == text ]] && set -- UTF8_STRING || set -- "$type"
+        xclip -sel c -i -t "$1" <"$src" >/dev/null 2>&1
+    fi
+}
+
+# Wayland → X11 (wl-paste --watch feeds the data to stdin; we only need the event).
+wl-paste --watch sh -c 'cat >/dev/null; echo' | while read -r _; do sync_one w2x; done &
+# X11 → Wayland.
+"$(dirname "$0")"/clip-x11-watch | while read -r _; do sync_one x2w; done &
+trap 'kill 0' EXIT
+wait -n
