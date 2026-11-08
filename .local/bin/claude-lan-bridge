@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Lets claude-proxied reach internal hosts through a Unix socket.
+"""Lets claude-proxied reach internal hosts and SSH servers through a Unix socket.
 
-outer SOCK NETS: runs on the normal network. Connects only to addresses in NETS
-                 and resolves only baikal.int names; refuses everything else.
-inner SOCK PORT: runs in the namespace. Takes TCP redirected to PORT and DNS on
-                 127.0.0.53, and passes both to outer.
+outer SOCK NETS PORTS: runs on the normal network. Connects only to addresses in
+                       NETS (any port) or to PORTS (any address), and refuses
+                       everything else. Answers DNS for any name.
+inner SOCK PORT:       runs in the namespace. Takes TCP redirected to PORT and
+                       DNS on 127.0.0.53, and passes both to outer.
 """
 import ipaddress, socket, struct, sys, threading
 
-DOMAIN = "baikal.int"
 RESOLVER = ("127.0.0.53", 53)
 SO_ORIGINAL_DST = 80
 
@@ -54,33 +54,22 @@ def read_line(s):
     return line.decode().split()
 
 
-def qname(packet):
-    labels, i = [], 12
-    while packet[i]:
-        labels.append(packet[i + 1:i + 1 + packet[i]].decode("ascii", "replace"))
-        i += packet[i] + 1
-    return ".".join(labels).lower(), i + 5  # name, end of the question
-
-
 def resolve(packet):
-    name, end = qname(packet)
-    if name == DOMAIN or name.endswith("." + DOMAIN):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
-            u.settimeout(3)
-            u.sendto(packet, RESOLVER)
-            return u.recv(4096)
-    # NXDOMAIN, one question, no answers
-    return packet[:2] + b"\x81\x83" + b"\x00\x01\x00\x00\x00\x00\x00\x00" + packet[12:end]
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+        u.settimeout(3)
+        u.sendto(packet, RESOLVER)
+        return u.recv(4096)
 
 
-def outer_client(c, nets):
+def outer_client(c, nets, ports):
     try:
         head = read_line(c)
         if head[0] == "dns":
             packet = read_exact(c, struct.unpack("!H", read_exact(c, 2))[0])
             answer = resolve(packet)
             c.sendall(struct.pack("!H", len(answer)) + answer)
-        elif head[0] == "tcp" and any(ipaddress.ip_address(head[1]) in n for n in nets):
+        elif head[0] == "tcp" and (int(head[2]) in ports
+                                   or any(ipaddress.ip_address(head[1]) in n for n in nets)):
             join(c, socket.create_connection((head[1], int(head[2])), timeout=10))
     except (OSError, ValueError, IndexError):
         pass
@@ -88,14 +77,15 @@ def outer_client(c, nets):
         c.close()
 
 
-def outer(path, nets):
-    nets = [ipaddress.ip_network(n) for n in nets.split(",")]
+def outer(path, nets, ports):
+    nets = [ipaddress.ip_network(n) for n in nets.split(",") if n]
+    ports = {int(p) for p in ports.split(",") if p}
     srv = socket.socket(socket.AF_UNIX)
     srv.bind(path)
     srv.listen(64)
     while True:
         c, _ = srv.accept()
-        threading.Thread(target=outer_client, args=(c, nets), daemon=True).start()
+        threading.Thread(target=outer_client, args=(c, nets, ports), daemon=True).start()
 
 
 def connect(path, header):
