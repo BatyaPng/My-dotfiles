@@ -97,6 +97,22 @@ sudo dnf install -y xclip
 systemctl --user enable --now clip-bridge
 ```
 
+## Bluetooth headphones on several adapters
+
+`bt-duo` is a TUI for using several Bluetooth headphones at once, spread over
+several adapters (built-in + USB dongles): connect, pair on a chosen adapter,
+move between adapters, per-device volume. It lists audio devices only.
+
+All connected Bluetooth outputs are also joined into one output, "Обе пары
+наушников", which you pick in the KDE sound applet like any other. It runs in
+its own PipeWire process (`bt-duo-combine.service`), so leaving a device out
+of it (space in `bt-duo`) restarts only that process, not Bluetooth. Left-out
+devices are kept in `~/.local/state/bt-duo/excluded`, not in git.
+
+```sh
+systemctl --user enable --now bt-duo-combine
+```
+
 ## Obsidian
 
 `Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Unlike the

@@ -1,0 +1,15 @@
+[Unit]
+Description=Combined Bluetooth headphones output (bt-duo)
+# Own PipeWire process, so restarting it (bt-duo include/exclude) keeps
+# Bluetooth connections up. Follows the main PipeWire up and down.
+After=pipewire.service
+BindsTo=pipewire.service
+
+[Service]
+ExecStartPre=%h/.local/bin/bt-duo gen-config
+ExecStart=/usr/bin/pipewire -c %S/bt-duo/combine.conf
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=pipewire.service
