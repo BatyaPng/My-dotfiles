@@ -1,0 +1,19 @@
+#!/bin/bash
+# Send xclip to the X display of the latest `ssh -Y` login: tmux panes and long-running
+# Claude Code sessions keep a stale DISPLAY (:0 = this machine's own desktop).
+# Prefers the Unix-socket relay :(N+100) from x11-unix-relay, which also works inside
+# claude-proxied's network sandbox; falls back to the inherited DISPLAY, then the desktop.
+# Forwarded displays over VPN can take >1 s per round trip, hence the 4 s limit.
+alive() { timeout 4 xprop -display "$1" -root -len 0 RESOURCE_MANAGER >/dev/null 2>&1; }
+f=$HOME/.cache/ssh-display
+d=
+[[ -r $f ]] && d=$(<"$f")
+n=${d#localhost:}; n=${n%%.*}
+if [[ $n =~ ^[0-9]+$ ]] && [[ -S /tmp/.X11-unix/X$((n + 100)) ]] && alive ":$((n + 100))"; then
+    export DISPLAY=:$((n + 100))
+elif [[ -n $d ]] && alive "$d"; then
+    export DISPLAY=$d
+elif ! { [[ -n $DISPLAY ]] && alive "$DISPLAY"; }; then
+    for d in :1 :0; do alive "$d" && { export DISPLAY=$d; break; }; done
+fi
+exec /usr/bin/xclip "$@"
