@@ -193,8 +193,5 @@ proxy_status() {
   if [ -f "$PROXY_STATE_FILE" ]; then echo "Proxy: ON ($PROXY_ADDR)"; else echo "Proxy: OFF"; fi
 }
 
-# Claude Code: no direct network, only the proxy (see ~/.local/bin/claude-proxied)
-alias claude='claude-proxied claude'
-
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set
