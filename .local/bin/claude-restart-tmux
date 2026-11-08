@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Restart the Claude Code sessions open in the current tmux session.
+
+usage: claude-restart-tmux [-n] [-f] [WINDOW...]
+  WINDOW         only these tmux windows, by name (default: all)
+  -n, --dry-run  show what would happen, change nothing
+  -f, --force    also restart sessions that are working right now
+
+Each session comes back in its own pane with the same session ID and name, so
+tmux window names stay. Skips busy sessions and the pane this runs from.
+"""
+import argparse, glob, json, os, shlex, signal, subprocess, sys, time
+
+WAIT = 30
+
+
+def tmux(*args):
+    return subprocess.run(["tmux", *args], check=True, capture_output=True, text=True).stdout
+
+
+def children(pid):
+    return subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout.split()
+
+
+def is_claude(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return b"claude" in f.read()
+    except OSError:
+        return False
+
+
+def sessions():
+    for path in glob.glob(os.path.expanduser("~/.claude/sessions/*.json")):
+        try:
+            with open(path) as f:
+                s = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if s.get("tmux") and is_claude(s["pid"]):
+            yield s
+
+
+def restart(s, pane_pid, pane):
+    os.kill(s["pid"], signal.SIGTERM)
+    deadline = time.time() + WAIT
+    while time.time() < deadline:
+        if not is_claude(s["pid"]) and not children(pane_pid):
+            break
+        time.sleep(0.5)
+    else:
+        return False  # never type into a pane that still runs something
+    cmd = ["claude-proxied", "claude", "--resume", s["sessionId"]]
+    if s.get("name") and s.get("nameSource") != "derived":
+        cmd += ["--name", s["name"]]
+    line = f"cd {shlex.quote(s['cwd'])} && {shlex.join(cmd)}"
+    tmux("send-keys", "-t", pane, "-l", line)
+    tmux("send-keys", "-t", pane, "Enter")
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("-n", "--dry-run", action="store_true")
+    ap.add_argument("-f", "--force", action="store_true")
+    ap.add_argument("windows", nargs="*")
+    args = ap.parse_args()
+    if not os.environ.get("TMUX"):
+        sys.exit("not inside tmux")
+
+    panes = {}
+    for row in tmux("list-panes", "-s", "-F", "#{pane_id} #{pane_pid} #{window_name}").splitlines():
+        pane, pid, window = row.split(" ", 2)
+        panes[pane] = (int(pid), window)
+
+    failed = 0
+    for s in sorted(sessions(), key=lambda s: s["tmux"]):
+        pane = s["tmux"].rsplit(".", 1)[-1]
+        if pane not in panes:
+            continue
+        pane_pid, window = panes[pane]
+        if args.windows and window not in args.windows:
+            continue
+        label = f"{window:12} {s.get('name', ''):20} {s['sessionId'][:8]}"
+        if pane == os.environ.get("TMUX_PANE"):
+            print(f"skip     {label} (this pane)")
+        elif s.get("status") != "idle" and not args.force:
+            print(f"skip     {label} ({s.get('status')}, use -f)")
+        elif args.dry_run:
+            print(f"would    {label}")
+        elif restart(s, pane_pid, pane):
+            print(f"restart  {label}")
+        else:
+            print(f"FAILED   {label} (still running after {WAIT} s, nothing typed)")
+            failed = 1
+    sys.exit(failed)
+
+
+main()

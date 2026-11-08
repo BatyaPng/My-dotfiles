@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Lets claude-proxied reach internal hosts through a Unix socket.
+
+outer SOCK NETS: runs on the normal network. Connects only to addresses in NETS
+                 and resolves only baikal.int names; refuses everything else.
+inner SOCK PORT: runs in the namespace. Takes TCP redirected to PORT and DNS on
+                 127.0.0.53, and passes both to outer.
+"""
+import ipaddress, socket, struct, sys, threading
+
+DOMAIN = "baikal.int"
+RESOLVER = ("127.0.0.53", 53)
+SO_ORIGINAL_DST = 80
+
+
+def pump(src, dst):
+    try:
+        while data := src.recv(65536):
+            dst.sendall(data)
+    except OSError:
+        pass
+    for s in (src, dst):
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
+def join(a, b):
+    t = threading.Thread(target=pump, args=(b, a), daemon=True)
+    t.start()
+    pump(a, b)
+    t.join()
+    a.close()
+    b.close()
+
+
+def read_exact(s, n):
+    data = b""
+    while len(data) < n:
+        part = s.recv(n - len(data))
+        if not part:
+            raise OSError("closed")
+        data += part
+    return data
+
+
+def read_line(s):
+    line = b""
+    while not line.endswith(b"\n"):
+        line += read_exact(s, 1)
+        if len(line) > 100:
+            raise OSError("bad header")
+    return line.decode().split()
+
+
+def qname(packet):
+    labels, i = [], 12
+    while packet[i]:
+        labels.append(packet[i + 1:i + 1 + packet[i]].decode("ascii", "replace"))
+        i += packet[i] + 1
+    return ".".join(labels).lower(), i + 5  # name, end of the question
+
+
+def resolve(packet):
+    name, end = qname(packet)
+    if name == DOMAIN or name.endswith("." + DOMAIN):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+            u.settimeout(3)
+            u.sendto(packet, RESOLVER)
+            return u.recv(4096)
+    # NXDOMAIN, one question, no answers
+    return packet[:2] + b"\x81\x83" + b"\x00\x01\x00\x00\x00\x00\x00\x00" + packet[12:end]
+
+
+def outer_client(c, nets):
+    try:
+        head = read_line(c)
+        if head[0] == "dns":
+            packet = read_exact(c, struct.unpack("!H", read_exact(c, 2))[0])
+            answer = resolve(packet)
+            c.sendall(struct.pack("!H", len(answer)) + answer)
+        elif head[0] == "tcp" and any(ipaddress.ip_address(head[1]) in n for n in nets):
+            join(c, socket.create_connection((head[1], int(head[2])), timeout=10))
+    except (OSError, ValueError, IndexError):
+        pass
+    finally:
+        c.close()
+
+
+def outer(path, nets):
+    nets = [ipaddress.ip_network(n) for n in nets.split(",")]
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(path)
+    srv.listen(64)
+    while True:
+        c, _ = srv.accept()
+        threading.Thread(target=outer_client, args=(c, nets), daemon=True).start()
+
+
+def connect(path, header):
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(path)
+    s.sendall(header)
+    return s
+
+
+def inner_tcp(c, path):
+    try:
+        dst = c.getsockopt(socket.SOL_IP, SO_ORIGINAL_DST, 16)
+        port, ip = struct.unpack("!H", dst[2:4])[0], socket.inet_ntoa(dst[4:8])
+        join(c, connect(path, f"tcp {ip} {port}\n".encode()))
+    except OSError:
+        c.close()
+
+
+def inner_dns(udp, packet, addr, path):
+    try:
+        with connect(path, b"dns\n" + struct.pack("!H", len(packet)) + packet) as s:
+            udp.sendto(read_exact(s, struct.unpack("!H", read_exact(s, 2))[0]), addr)
+    except OSError:
+        pass
+
+
+def inner_udp(udp, path):
+    while True:
+        packet, addr = udp.recvfrom(4096)
+        threading.Thread(target=inner_dns, args=(udp, packet, addr, path), daemon=True).start()
+
+
+def inner(path, port):
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind(RESOLVER)
+    threading.Thread(target=inner_udp, args=(udp, path), daemon=True).start()
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", int(port)))
+    srv.listen(64)
+    while True:
+        c, _ = srv.accept()
+        threading.Thread(target=inner_tcp, args=(c, path), daemon=True).start()
+
+
+if __name__ == "__main__":
+    {"outer": outer, "inner": inner}[sys.argv[1]](*sys.argv[2:])

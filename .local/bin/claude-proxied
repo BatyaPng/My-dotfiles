@@ -1,0 +1,44 @@
+#!/bin/bash
+# Run claude in a network namespace whose only ways out are the local proxy and
+# the internal network: baikal.int names and CLAUDE_LAN_NETS addresses.
+PROXY_PORT="${PROXY_PORT:-2080}"
+LAN_NETS="${CLAUDE_LAN_NETS:-192.168.0.0/16}"
+LAN_PORT=2081
+RUN="${XDG_RUNTIME_DIR:-/tmp}"
+SOCK="$RUN/claude-proxy-$$.sock"
+LAN_SOCK="$RUN/claude-lan-$$.sock"
+BRIDGE="$(dirname "$(readlink -f "$0")")/claude-lan-bridge"
+socat -lf /dev/null UNIX-LISTEN:"$SOCK",fork TCP:127.0.0.1:"$PROXY_PORT" &
+PROXY_BRIDGE=$!
+python3 -I "$BRIDGE" outer "$LAN_SOCK" "$LAN_NETS" &
+LAN_BRIDGE=$!
+trap 'kill $PROXY_BRIDGE $LAN_BRIDGE 2>/dev/null; rm -f "$SOCK" "$LAN_SOCK"' EXIT
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$SOCK" ] && [ -S "$LAN_SOCK" ] && break; sleep 0.1; done
+export LAN_NETS LAN_PORT LAN_SOCK SOCK BRIDGE
+bwrap --dev-bind / / --unshare-user --unshare-net --die-with-parent \
+  --cap-add CAP_NET_ADMIN --cap-add CAP_NET_BIND_SERVICE \
+  --setenv HTTP_PROXY http://127.0.0.1:2080 --setenv HTTPS_PROXY http://127.0.0.1:2080 \
+  --setenv http_proxy http://127.0.0.1:2080 --setenv https_proxy http://127.0.0.1:2080 \
+  --setenv no_proxy localhost,127.0.0.1,::1,.baikal.int --setenv NO_PROXY localhost,127.0.0.1,::1,.baikal.int \
+  bash -c '
+    socat -lf /dev/null TCP-LISTEN:2080,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:"$SOCK" &
+    python3 -I "$BRIDGE" inner "$LAN_SOCK" "$LAN_PORT" &
+    rules=""
+    ip addr add 169.254.1.1/32 dev lo  # a loopback source breaks the redirected replies
+    for net in ${LAN_NETS//,/ }; do
+      ip route add "$net" dev lo src 169.254.1.1
+      rules+="ip daddr $net meta l4proto tcp redirect to :$LAN_PORT"$'"'"'\n'"'"'
+    done
+    nft -f - <<NFT
+table ip claude {
+  chain out {
+    type nat hook output priority -100; policy accept;
+    $rules
+  }
+}
+NFT
+    sleep 0.3
+    setpriv --inh-caps=-all --ambient-caps=-all "$@"
+    rc=$?
+    kill $(jobs -p) 2>/dev/null
+    exit $rc' bash "${@:-claude}"

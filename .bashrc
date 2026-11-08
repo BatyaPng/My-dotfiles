@@ -213,5 +213,8 @@ code() {
   command code "$@"
 }
 
+# Claude Code: no direct network, only the proxy (see ~/.local/bin/claude-proxied)
+alias claude='claude-proxied claude'
+
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set
