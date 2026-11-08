@@ -1,5 +1,6 @@
 -- lazy packet manager
 require("config.lazy")
+require("config.clip_bridge")
 
 -- relative number
 vim.cmd('set number relativenumber')

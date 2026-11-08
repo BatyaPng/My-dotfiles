@@ -1,0 +1,19 @@
+#!/bin/bash
+# Clipboard bridge for `ssh -Y` sessions from the Wayland laptop.
+#   clip [file...]   copy stdin/files: OSC 52 (terminal -> tmux -> ssh -> Alacritty) + X11 via xclip
+#   clip -o          paste: forwarded X clipboard (KWin syncs it with Wayland), else tmux buffer
+if [[ $1 == -o ]]; then
+    timeout 2 ~/.local/bin/xclip -selection clipboard -o 2>/dev/null && exit 0
+    [[ -n $TMUX ]] && exec tmux save-buffer -
+    exit 1
+fi
+data=$(cat "$@"; printf x); data=${data%x}
+b64=$(printf %s "$data" | base64 -w0)
+osc=$'\e]52;c;'"$b64"$'\a'
+if [[ -n $TMUX ]]; then
+    # tmux (set-clipboard on) stores it and re-emits OSC 52 to the outer terminal
+    printf %s "$data" | tmux load-buffer -w - 2>/dev/null || { printf %s "$osc" > /dev/tty; } 2>/dev/null
+elif [[ -w /dev/tty ]]; then
+    { printf %s "$osc" > /dev/tty; } 2>/dev/null
+fi
+printf %s "$data" | (timeout 2 ~/.local/bin/xclip -selection clipboard -i >/dev/null 2>&1 &)

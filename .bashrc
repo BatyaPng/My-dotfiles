@@ -227,6 +227,7 @@ alias claude='claude-proxied claude'
 # Remember the forwarded X display of the latest `ssh -Y` login for ~/.local/bin/xclip
 if [[ -n $SSH_CONNECTION && $DISPLAY == localhost:* && -z $TMUX ]]; then
     mkdir -p ~/.cache && printf "%s\n" "$DISPLAY" > ~/.cache/ssh-display
+    setsid -f ~/.local/bin/x11-unix-relay "$DISPLAY" $$ >/dev/null 2>&1 </dev/null
 fi
 
 

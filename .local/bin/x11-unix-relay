@@ -1,0 +1,14 @@
+#!/bin/bash
+# x11-unix-relay localhost:N SHELL_PID
+# Exposes an ssh-forwarded X display (TCP 127.0.0.1:60NN) as the Unix socket display
+# :(N+100), so sandboxes without host networking (claude-proxied) can reach it too.
+# Lives until SHELL_PID (the ssh login shell) exits.
+n=${1#localhost:}; n=${n%%.*}
+[[ $n =~ ^[0-9]+$ && $2 =~ ^[0-9]+$ ]] || exit 1
+u=$((n + 100)) sock=/tmp/.X11-unix/X$((n + 100))
+cookie=$(xauth list "unix:$n" 2>/dev/null | awk "{print \$3; exit}")
+[[ -n $cookie ]] && xauth add ":$u" MIT-MAGIC-COOKIE-1 "$cookie" 2>/dev/null
+socat -lf /dev/null UNIX-LISTEN:"$sock",fork,unlink-early,mode=600 TCP:127.0.0.1:$((6000 + n)) &
+relay=$!
+while kill -0 "$2" 2>/dev/null && kill -0 $relay 2>/dev/null; do sleep 20; done
+kill $relay 2>/dev/null; rm -f "$sock"; xauth remove ":$u" 2>/dev/null
