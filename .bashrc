@@ -124,8 +124,12 @@ fi
 # set brightness ext monitor
 br() { ddcutil setvcp 10 "$1"; }
 
-# pbcopy
-alias pbcopy='wl-copy'
+# pbcopy: wl-copy on Wayland (Fedora KDE), xclip on X11 (work PC, ssh -Y)
+if [ -n "$WAYLAND_DISPLAY" ]; then
+    alias pbcopy='wl-copy'
+else
+    alias pbcopy='xclip -selection clipboard'
+fi
 
 export PATH="$PATH:$HOME/Tools/Scripts"
 
@@ -153,7 +157,8 @@ alias l='lazygit'
 alias obsidian='flatpak run md.obsidian.Obsidian --disable-gpu >/dev/null 2>&1 &'
 
 export PATH="$HOME/.local/bin:$PATH"
-# nvim
+# nvim (the work PC has it in ~/Tools/Nvim)
+[ -d "$HOME/Tools/Nvim/bin" ] && export PATH="$PATH:$HOME/Tools/Nvim/bin"
 export EDITOR="nvim"
 export VISUAL="nvim"
 
@@ -192,6 +197,15 @@ proxy_off() {
 proxy_status() {
   if [ -f "$PROXY_STATE_FILE" ]; then echo "Proxy: ON ($PROXY_ADDR)"; else echo "Proxy: OFF"; fi
 }
+
+# dnf/apt: sudo drops the proxy env vars, so pass the proxy as an option while it's on.
+# The trailing space in the sudo alias makes `sudo dnf`/`sudo apt` expand the aliases too.
+alias sudo='sudo '
+if command -v dnf >/dev/null; then
+    alias dnf='dnf ${http_proxy:+--setopt=proxy=$http_proxy}'
+elif command -v apt >/dev/null; then
+    alias apt='apt ${http_proxy:+-o Acquire::http::Proxy=$http_proxy -o Acquire::https::Proxy=$http_proxy}'
+fi
 
 # VS Code: deploy the dotfiles config first if it changed (see ~/.local/bin/vscode-deploy)
 code() {
