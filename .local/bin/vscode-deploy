@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Deploy the VS Code config from ~/.dotfiles.
+#
+# usage: vscode-deploy [-n] [--auto] [--save]
+#   -n, --dry-run  show what would happen, change nothing
+#   --auto         do nothing (and print nothing) unless extensions.txt
+#                  changed since the last deploy or a config link is broken;
+#                  the `code` function in .bashrc runs this
+#   --save         instead of deploying, write the installed extensions
+#                  back to extensions.txt (to commit them)
+#
+# Deploy links settings.json and keybindings.json (if stow hasn't yet) and
+# installs every extension from extensions.txt that is missing. Extensions
+# installed but not in the list are only reported, never removed.
+set -uo pipefail
+
+repo=$HOME/.dotfiles/.config/Code
+user_dir=$HOME/.config/Code/User
+list=$repo/extensions.txt
+stamp=${XDG_STATE_HOME:-$HOME/.local/state}/vscode-deploy/stamp
+
+dry=0 save=0 auto=0
+for arg; do
+    case $arg in
+        -n|--dry-run) dry=1 ;;
+        --save) save=1 ;;
+        --auto) auto=1 ;;
+        -h|--help) sed -n '2,14s/^# \{0,1\}//p' "$0"; exit 0 ;;
+        *) echo "unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+if ((auto)); then
+    links_ok=1
+    for f in settings.json keybindings.json; do
+        [[ $(readlink -f "$user_dir/$f") == "$(readlink -f "$repo/User/$f")" ]] || links_ok=0
+    done
+    ((links_ok)) && [[ -e $stamp && ! $list -nt $stamp ]] && exit 0
+    echo "vscode-deploy: config changed, deploying"
+fi
+
+done_stamp() { ((dry)) || { mkdir -p "${stamp%/*}" && touch "$stamp"; }; }
+
+command -v code >/dev/null || { echo "code not found in PATH" >&2; exit 1; }
+
+run() {
+    if ((dry)); then echo "  would run: $*"; else "$@"; fi
+}
+
+installed() { code --list-extensions | tr '[:upper:]' '[:lower:]' | sort -u; }
+wanted() { grep -v '^\s*\(#\|$\)' "$list" | tr '[:upper:]' '[:lower:]' | sort -u; }
+
+if ((save)); then
+    if ((dry)); then
+        diff <(wanted) <(installed) && echo "extensions.txt is up to date"
+    else
+        installed > "$list"
+        echo "wrote $(wc -l < "$list") extensions to $list"
+        done_stamp
+    fi
+    exit 0
+fi
+
+echo "== config files"
+mkdir -p "$user_dir"
+for f in settings.json keybindings.json; do
+    src=$repo/User/$f dst=$user_dir/$f
+    if [[ -L $dst && $(readlink -f "$dst") == "$(readlink -f "$src")" ]]; then
+        echo "  $f: linked"
+    elif [[ ! -e $dst && ! -L $dst ]]; then
+        echo "  $f: linking"
+        run ln -s "$(realpath --relative-to="$user_dir" "$src")" "$dst"
+    elif cmp -s "$dst" "$src"; then
+        echo "  $f: same content, replacing with link"
+        run ln -sf "$(realpath --relative-to="$user_dir" "$src")" "$dst"
+    else
+        echo "  $f: differs from the repo, left alone (diff $dst $src)"
+    fi
+done
+
+echo "== extensions"
+missing=$(comm -23 <(wanted) <(installed))
+extra=$(comm -13 <(wanted) <(installed))
+failed=()
+for ext in $missing; do
+    echo "  installing $ext"
+    if ((dry)); then continue; fi
+    code --install-extension "$ext" >/dev/null 2>&1 || failed+=("$ext")
+done
+[[ -z $missing ]] && echo "  all $(wanted | wc -l) installed"
+((${#failed[@]})) && printf '  failed: %s\n' "${failed[@]}"
+[[ -n $extra ]] && printf '  not in extensions.txt: %s\n' $extra \
+    && echo "  (vscode-deploy --save adds them)"
+done_stamp
+exit 0

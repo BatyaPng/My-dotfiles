@@ -63,11 +63,17 @@ flatpak install -y flathub md.obsidian.Obsidian org.telegram.desktop
 NoMachine has no repo: download the x86_64 RPM from
 <https://www.nomachine.com/download> and `sudo dnf install` it.
 
-VS Code extensions:
+VS Code config and extensions (links settings/keybindings if needed, installs
+missing extensions from `extensions.txt`; `--save` writes the installed ones
+back to the list, `-n` is a dry run):
 
 ```sh
-xargs -n1 code --install-extension < ~/.config/Code/extensions.txt
+vscode-deploy
 ```
+
+The `code` function in `.bashrc` runs `vscode-deploy --auto` first, which
+deploys only when `extensions.txt` is newer than the last deploy or a config
+link is broken, so after a `git pull` the next `code` brings VS Code up to date.
 
 Kanata (input access without root, binary from GitHub releases):
 

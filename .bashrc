@@ -193,5 +193,11 @@ proxy_status() {
   if [ -f "$PROXY_STATE_FILE" ]; then echo "Proxy: ON ($PROXY_ADDR)"; else echo "Proxy: OFF"; fi
 }
 
+# VS Code: deploy the dotfiles config first if it changed (see ~/.local/bin/vscode-deploy)
+code() {
+  command -v vscode-deploy >/dev/null && vscode-deploy --auto
+  command code "$@"
+}
+
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set
