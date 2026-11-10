@@ -9,6 +9,7 @@ donjayamanne.python-extension-pack
 eamodio.gitlens
 hankhsu1996.better-systemverilog-syntax
 hediet.vscode-drawio
+hudson-river-trading.vscode-slang
 jakob101.relativepath
 james-yu.latex-workshop
 k3ndr1ckfu.tcl-language-support-for-vscode
