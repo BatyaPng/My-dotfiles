@@ -85,11 +85,20 @@ failed=()
 for ext in $missing; do
     echo "  installing $ext"
     if ((dry)); then continue; fi
-    code --install-extension "$ext" >/dev/null 2>&1 || failed+=("$ext")
+    if ! out=$(code --install-extension "$ext" 2>&1); then
+        failed+=("$ext")
+        printf '    %s\n' "$(grep -v '^\s*$' <<<"$out" | tail -1)"
+    fi
 done
 [[ -z $missing ]] && echo "  all $(wanted | wc -l) installed"
-((${#failed[@]})) && printf '  failed: %s\n' "${failed[@]}"
 [[ -n $extra ]] && printf '  not in extensions.txt: %s\n' $extra \
     && echo "  (vscode-deploy --save adds them)"
+if ((${#failed[@]})); then
+    # No stamp: the next `code` (vscode-deploy --auto) retries them
+    printf '  failed: %s\n' "${failed[@]}"
+    echo "  will retry on the next code / vscode-deploy; drop ones that can"
+    echo "  never install from extensions.txt"
+    exit 1
+fi
 done_stamp
 exit 0
