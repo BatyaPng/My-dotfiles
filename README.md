@@ -119,6 +119,14 @@ devices are kept in `~/.local/state/bt-duo/excluded`, not in git.
 systemctl --user enable --now bt-duo-combine
 ```
 
+## Claude Code notifications in tmux
+
+`.claude/hooks/tmux_notify.sh` rings the bell on the Claude pane, so tmux
+marks its window in the status bar, and shows `Claude [win]: done` or the
+"needs input" text on every attached client. It needs `jq` and does nothing
+outside tmux. The `Stop` and `Notification` hooks that call it are in
+`.claude/settings.json`.
+
 ## Obsidian
 
 `Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Unlike the
