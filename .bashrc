@@ -224,6 +224,17 @@ if [ -x ~/.local/bin/agent-proxied ]; then
     alias codex='agent-proxied codex'
 fi
 
+# rc dashboard (~/Work/run_compare): restart serve.py on 127.0.0.1:8765 and wait until it answers
+rc-serve() {
+  pkill -f 'serve.py --port 8765' && sleep 1
+  (cd ~/Work/run_compare && nohup python3 ./serve.py --port 8765 > /tmp/serve8765.log 2>&1 &)
+  for _ in $(seq 30); do
+    curl -s --noproxy '*' -o /dev/null -m 2 http://127.0.0.1:8765/ && { echo "rc dashboard up: http://127.0.0.1:8765/"; return 0; }
+    sleep 1
+  done
+  echo "rc dashboard did not start, see /tmp/serve8765.log" >&2; tail -5 /tmp/serve8765.log >&2; return 1
+}
+
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set
 
