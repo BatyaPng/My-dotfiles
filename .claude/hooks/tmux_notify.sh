@@ -10,6 +10,10 @@ win=$(tmux display -p -t "$TMUX_PANE" '#{window_index}:#{window_name}' 2>/dev/nu
 tty=$(tmux display -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null)
 
 if [ "$kind" = input ]; then
+  # Skip the idle reminder ("Claude is waiting for your input"); Stop already flagged the window
+  type=$(printf '%s' "$input" | jq -r '.notification_type // ""' 2>/dev/null)
+  [ "$type" = idle_prompt ] && exit 0
+  printf '%s' "$input" | grep -qi 'waiting for your' && exit 0
   detail=$(printf '%s' "$input" | jq -r '.message // "needs input"' 2>/dev/null)
   msg="Claude [$win]: ${detail:-needs input}"
 else
