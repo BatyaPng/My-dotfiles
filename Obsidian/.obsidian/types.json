@@ -52,6 +52,18 @@
     "summary": "text",
     "blocks": "multitext",
     "blocked_by": "multitext",
-    "relates_to": "multitext"
+    "relates_to": "multitext",
+    "resume": "text",
+    "start": "text",
+    "updated": "datetime",
+    "state": "text",
+    "now": "text",
+    "note": "text",
+    "gflow_branch": "multitext",
+    "design_rtl_branch": "multitext",
+    "base_branch": "multitext",
+    "dir": "text",
+    "run_state": "text",
+    "status_cmd": "text"
   }
 }
