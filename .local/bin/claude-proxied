@@ -5,6 +5,7 @@ PROXY_PORT="${PROXY_PORT:-2080}"
 LAN_NETS="${CLAUDE_LAN_NETS:-192.168.0.0/16}"
 SSH_PORTS="${CLAUDE_SSH_PORTS-22}"  # empty: no SSH exception
 LAN_PORT=2081
+HOST_PORTS="${CLAUDE_HOST_PORTS-8765}"  # host loopback ports reachable inside (rc dashboard)
 RUN="${XDG_RUNTIME_DIR:-/tmp}"
 SOCK="$RUN/claude-proxy-$$.sock"
 LAN_SOCK="$RUN/claude-lan-$$.sock"
@@ -32,11 +33,16 @@ if [ -f /etc/ssh/ssh_config ] && mkdir -m 700 "$SSH_D"; then
 fi
 socat -lf /dev/null UNIX-LISTEN:"$SOCK",fork TCP:127.0.0.1:"$PROXY_PORT" &
 PROXY_BRIDGE=$!
+HOST_BRIDGES=""
+for p in $HOST_PORTS; do
+  socat -lf /dev/null UNIX-LISTEN:"$RUN/claude-host-$$-$p.sock",fork TCP:127.0.0.1:"$p" &
+  HOST_BRIDGES+=" $!"
+done
 python3 -I "$BRIDGE" outer "$LAN_SOCK" "$LAN_NETS" "$SSH_PORTS" &
 LAN_BRIDGE=$!
-trap 'kill $PROXY_BRIDGE $LAN_BRIDGE 2>/dev/null; rm -rf "$SOCK" "$LAN_SOCK" "$SSH_D"' EXIT
+trap 'kill $PROXY_BRIDGE $LAN_BRIDGE $HOST_BRIDGES 2>/dev/null; rm -rf "$SOCK" "$LAN_SOCK" "$SSH_D" "$RUN"/claude-host-$$-*.sock' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$SOCK" ] && [ -S "$LAN_SOCK" ] && break; sleep 0.1; done
-export LAN_NETS SSH_PORTS LAN_PORT LAN_SOCK SOCK BRIDGE
+export HOST_PORTS RUN WPID=$$ LAN_NETS SSH_PORTS LAN_PORT LAN_SOCK SOCK BRIDGE
 bwrap --dev-bind / / "${SSH_BIND[@]}" --unshare-user --unshare-net --die-with-parent \
   --cap-add CAP_NET_ADMIN --cap-add CAP_NET_BIND_SERVICE \
   --setenv HTTP_PROXY http://127.0.0.1:2080 --setenv HTTPS_PROXY http://127.0.0.1:2080 \
@@ -44,6 +50,9 @@ bwrap --dev-bind / / "${SSH_BIND[@]}" --unshare-user --unshare-net --die-with-pa
   --setenv no_proxy localhost,127.0.0.1,::1,.baikal.int --setenv NO_PROXY localhost,127.0.0.1,::1,.baikal.int \
   bash -c '
     socat -lf /dev/null TCP-LISTEN:2080,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:"$SOCK" &
+    for p in $HOST_PORTS; do
+      socat -lf /dev/null TCP-LISTEN:$p,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:"$RUN/claude-host-$WPID-$p.sock" &
+    done
     python3 -I "$BRIDGE" inner "$LAN_SOCK" "$LAN_PORT" &
     rules=""
     ip addr add 169.254.1.1/32 dev lo  # a loopback source breaks the redirected replies
