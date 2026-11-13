@@ -1,0 +1,840 @@
+#!/usr/bin/env python3
+"""hlcolor: pick modules of a gflow run and write an Innovus Tcl file that colours them.
+
+  hlcolor <run dir | workarea | syn dir | netlist.v>        terminal UI
+  hlcolor <run> --list [a/b/c]       print the rows of one level (path of row names)
+  hlcolor <run> --auto [-o FILE]     write the suggested colouring without the UI
+  --refresh                          reread netlist and RTL instead of the cache
+
+The module list comes from the synthesis netlist (hierarchical instances and their cell
+counts) and the RTL (instance names of modules that synthesis ungrouped, found again in
+the netlist by name prefix).  Writes <run>/hl_<top>.tcl; in Innovus: source it.
+"""
+import argparse, curses, glob, gzip, hashlib, os, pickle, re, sys, time
+
+PALETTE = [  # name, hex for Innovus, xterm-256 index for the terminal
+    ('red', '#ff3030', 196), ('cyan', '#00ffff', 51), ('yellow', '#ffff00', 226),
+    ('magenta', '#ff00ff', 201), ('lime', '#80ff00', 118), ('orange', '#ff9900', 208),
+    ('blue', '#3a78ff', 33), ('pink', '#ff88cc', 211), ('purple', '#a040ff', 135),
+    ('green', '#00b050', 35), ('white', '#ffffff', 231), ('brown', '#c07830', 130),
+]
+CACHE = os.path.expanduser('~/.cache/hlcolor')
+AUTO_MAX = 10          # rows the suggestion switches on
+AUTO_MIN_SHARE = 0.2   # % of the opened module a row needs for the suggestion
+SPLIT_ARRAY_SHARE = 5  # % of the parent each element needs to be shown as its own row
+
+# ---------------------------------------------------------------- inputs
+
+
+def find_netlist(path):
+    """run dir, workarea, syn dir or netlist file -> (netlist, top, run dir)"""
+    path = os.path.abspath(path)
+    if os.path.isfile(path):
+        top = re.sub(r'\.(v|vg)(\.gz)?$', '', os.path.basename(path))
+        return path, top, os.path.dirname(path)
+    for tcl in sorted(glob.glob(os.path.join(path, 'scripts', '*.tcl'))):
+        try:
+            txt = open(tcl, errors='replace').read()
+        except OSError:
+            continue
+        m = re.search(r'^set NETLIST\s+\{?([^}\s]+)', txt, re.M)
+        if m and os.path.isfile(m.group(1)):
+            d = re.search(r'^set DESIGN\s+\{?(\w+)', txt, re.M)
+            top = d.group(1) if d else re.sub(r'\.(v|vg)(\.gz)?$', '', os.path.basename(m.group(1)))
+            return m.group(1), top, path
+    for pat in ('out/final_innovus/*.v', 'syn/out/final_innovus/*.v', 'workarea/syn/out/final_innovus/*.v'):
+        hits = sorted(glob.glob(os.path.join(path, pat)))
+        if hits:
+            n = hits[0]
+            return n, os.path.basename(n)[:-2], path
+    sys.exit('hlcolor: no netlist found from %s (give a run dir with scripts/*.tcl, a syn dir or a .v file)' % path)
+
+
+def cache_file(kind, key):
+    os.makedirs(CACHE, exist_ok=True)
+    return os.path.join(CACHE, '%s_%s.pkl' % (kind, hashlib.sha1(key.encode()).hexdigest()[:16]))
+
+
+def load_cache(f, stamp):
+    try:
+        with open(f, 'rb') as fh:
+            d = pickle.load(fh)
+        return d['data'] if d['stamp'] == stamp else None
+    except Exception:
+        return None
+
+
+def save_cache(f, stamp, data):
+    try:
+        with open(f + '.tmp', 'wb') as fh:
+            pickle.dump({'stamp': stamp, 'data': data}, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(f + '.tmp', f)
+    except OSError:
+        pass
+
+
+NL_MOD = re.compile(r'module\s+(\\\S+|\w+)')
+NL_INST = re.compile(r'(\\\S+|[A-Za-z_][\w$]*)\s+(\\\S+\s|[A-Za-z_][\w$]*)\s*\(')
+NL_TYPE = re.compile(r'(\\\S+|[A-Za-z_][\w$]*)\s*$')
+NL_NAME = re.compile(r'(\\\S+\s|[A-Za-z_][\w$]*)\s*\(')
+NL_NOT = {'module', 'input', 'output', 'inout', 'wire', 'assign', 'reg', 'supply0', 'supply1',
+          'tri', 'tri0', 'tri1', 'wand', 'wor', 'endmodule', 'specify', 'primitive', 'function',
+          'task', 'always', 'initial', 'parameter', 'localparam', 'defparam'}
+
+
+def parse_netlist(path):
+    """{module: [(cell or module type, instance name), ...]} of a gate-level netlist"""
+    mods, cur, pend = {}, None, None
+    op = gzip.open if path.endswith('.gz') else open
+    with op(path, 'rt', errors='replace') as f:
+        for line in f:
+            s = line.lstrip()
+            if not s:
+                continue
+            c = s[0]
+            if c == 'm' and s.startswith('module'):
+                m = NL_MOD.match(s)
+                if m:
+                    cur = mods.setdefault(m.group(1).lstrip('\\'), [])
+                    continue
+            if c == 'e' and s.startswith('endmodule'):
+                cur = None
+                continue
+            if cur is None or not (c.isalpha() or c == '_' or c == '\\'):
+                pend = None
+                continue
+            if pend:  # Genus writes long instances as 'TYPE' on one line, 'name(.A (x), ...' on the next
+                m = NL_NAME.match(s)
+                if m:
+                    cur.append((pend, m.group(1).strip().lstrip('\\')))
+                    pend = None
+                    continue
+            pend = None
+            m = NL_INST.match(s)
+            if m and m.group(1) not in NL_NOT:
+                cur.append((m.group(1).lstrip('\\'), m.group(2).strip().lstrip('\\')))
+                continue
+            m = NL_TYPE.match(s)
+            if m and m.group(1) not in NL_NOT:
+                pend = m.group(1).lstrip('\\')
+    return mods
+
+
+def rtl_root_of(*paths):
+    for p in paths:
+        i = p.find('/design_rtl/')
+        if i >= 0:
+            return p[:i + len('/design_rtl')]
+    return None
+
+
+RTL_MOD = re.compile(r'^\s*module\s+(?:automatic\s+|static\s+)?(\w+)', re.M)
+
+
+def index_rtl(root):
+    """{module name: [files]} of the RTL tree, without workareas"""
+    idx = {}
+    for d, dirs, files in os.walk(root):
+        dirs[:] = [x for x in dirs if not (x.startswith('workarea') or x.startswith('.'))]
+        for fn in files:
+            if not fn.endswith(('.sv', '.v', '.svh')):
+                continue
+            p = os.path.join(d, fn)
+            try:
+                if os.path.getsize(p) > 5e6:
+                    continue
+                txt = open(p, errors='replace').read()
+            except OSError:
+                continue
+            for m in RTL_MOD.finditer(txt):
+                idx.setdefault(m.group(1), []).append(p)
+    return idx
+
+
+SV_KW = set('''module endmodule input output inout ref logic bit byte int shortint longint integer
+time real wire reg tri supply0 supply1 genvar event string type parameter localparam assign always
+always_ff always_comb always_latch initial final function endfunction task endtask return if else
+for foreach while do repeat forever case casez casex endcase unique unique0 priority default begin
+end fork join join_any join_none generate endgenerate typedef struct union enum packed signed
+unsigned import export package endpackage interface endinterface modport assert assume cover
+property sequence posedge negedge or and not automatic static const var void virtual new null
+disable wait iff inside with defparam specify endspecify break continue bind let checker clocking
+global class endclass extends'''.split())
+SV_TOK = re.compile(r'`\w+|\\\S+|[A-Za-z_][\w$]*|\d[\w\']*|"(?:\\.|[^"\\])*"|\S')
+
+
+def _ident(t):
+    return (t[0].isalpha() or t[0] == '_' or t[0] == '\\') and t not in SV_KW
+
+
+def _skip(toks, i):
+    """toks[i] == '(' -> index after the matching ')'"""
+    depth = 0
+    while i < len(toks):
+        if toks[i] == '(':
+            depth += 1
+        elif toks[i] == ')':
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return i
+
+
+def rtl_instances(path, name):
+    """[(module type, instance, [(generate label or None, in a for loop)])] of module name"""
+    try:
+        txt = open(path, errors='replace').read()
+    except OSError:
+        return None
+    txt = re.sub(r'//[^\n]*|/\*.*?\*/', ' ', txt, flags=re.S)
+    m = re.search(r'\bmodule\s+(?:automatic\s+|static\s+)?%s\b' % re.escape(name), txt)
+    if not m:
+        return None
+    e = txt.find('endmodule', m.end())
+    toks = SV_TOK.findall(txt[m.end():e if e > 0 else None])
+    # skip the header: parameter list and port list up to the first ';'
+    i = 0
+    while i < len(toks) and toks[i] != ';':
+        i = _skip(toks, i) if toks[i] == '(' else i + 1
+    out, stack, loop, n = [], [], False, len(toks)
+    while i < n:
+        t = toks[i]
+        if t == 'for':
+            loop = True
+        elif t == 'begin':
+            lbl = None
+            if i + 2 < n and toks[i + 1] == ':':
+                lbl = toks[i + 2]
+                i += 2
+            stack.append((lbl, loop))
+            loop = False
+        elif t == 'end':
+            if stack:
+                stack.pop()
+            if i + 2 < n and toks[i + 1] == ':':
+                i += 2
+        elif t == '(':
+            i = _skip(toks, i)
+            continue
+        elif _ident(t) and i + 2 < n:
+            j = i + 1
+            if toks[j] == '#' and toks[j + 1] == '(':
+                j = _skip(toks, j + 1)
+            if j + 1 < n and _ident(toks[j]) and toks[j + 1] == '(':
+                out.append((t.lstrip('\\'), toks[j].lstrip('\\'), list(stack)))
+                i = _skip(toks, j + 1)
+                continue
+        i += 1
+    return out
+
+
+# ---------------------------------------------------------------- design model
+
+
+def norm(name):
+    return re.sub(r'\]\.|\[|\]|\.', '_', name).strip('_')
+
+
+def natkey(s):
+    return [int(x) if x.isdigit() else x for x in re.split(r'(\d+)', s)]
+
+
+class Node:
+    def __init__(self, kind, name, mod, prefix, ipath, rtl, count, raw=None):
+        self.kind = kind        # module (hierarchical instance), prefix (ungrouped), array, other
+        self.name = name        # row label
+        self.mod = mod          # netlist module the names live in (module: its own type)
+        self.prefix = prefix    # name prefix inside mod ('' for a module node)
+        self.ipath = ipath      # Innovus path of mod ('' = top)
+        self.rtl = rtl          # RTL module type, None if unknown
+        self.count = count      # leaf cells
+        self.raw = raw          # module node: instance name in its parent
+        self.elems = []         # array: element nodes
+        self.kids = None
+        self.guess = False
+        self.parent = None
+
+    @property
+    def path(self):  # Innovus name of the object (module) or the prefix (prefix)
+        if self.kind == 'module':
+            return self.ipath
+        return (self.ipath + '/' if self.ipath else '') + self.prefix
+
+    @property
+    def key(self):
+        if self.kind == 'array':
+            return 'A:' + '|'.join(e.key for e in self.elems)
+        if self.kind == 'other':
+            return 'o:' + self.ipath + '|' + self.mod
+        return self.kind[0] + ':' + self.path
+
+    @property
+    def full(self):
+        if self.kind == 'module':
+            return self.path or self.name
+        if self.kind == 'prefix':
+            return self.path + '_*'
+        return (self.ipath + '/' if self.ipath else '') + self.name
+
+    def specs(self):
+        """[(get_db class, pattern)] that select the objects in Innovus"""
+        if self.kind == 'module':
+            return [('hinsts', self.path)]
+        if self.kind == 'prefix':
+            p = self.path.replace('[', '\\[').replace(']', '\\]')
+            return [('hinsts', p + '_*'), ('insts', p + '_*'), ('insts', p)]
+        if self.kind == 'array':
+            return [s for e in self.elems for s in e.specs()]
+        return []
+
+
+class Design:
+    def __init__(self, target, refresh=False, log=print):
+        self.netlist, self.top, self.rundir = find_netlist(target)
+        st = os.stat(self.netlist)
+        stamp = (st.st_size, int(st.st_mtime))
+        cf = cache_file('nl', self.netlist)
+        self.mods = None if refresh else load_cache(cf, stamp)
+        if self.mods is None:
+            log('reading netlist %s (%.0f MB) ...' % (self.netlist, st.st_size / 1e6))
+            t = time.time()
+            self.mods = parse_netlist(self.netlist)
+            log('  %d modules in %.0f s' % (len(self.mods), time.time() - t))
+            save_cache(cf, stamp, self.mods)
+        if self.top not in self.mods:
+            used = {t for v in self.mods.values() for t, _ in v}
+            roots = [m for m in self.mods if m not in used]
+            self.top = max(roots, key=lambda m: len(self.mods[m])) if roots else next(iter(self.mods))
+        self.rtl_root = rtl_root_of(self.netlist, os.path.abspath(target))
+        self.rtl = {}
+        if self.rtl_root:
+            cf = cache_file('rtl', self.rtl_root)
+            day = int(time.time() // 86400)
+            self.rtl = None if refresh else load_cache(cf, day)
+            if self.rtl is None:
+                log('indexing RTL under %s ...' % self.rtl_root)
+                self.rtl = index_rtl(self.rtl_root)
+                save_cache(cf, day, self.rtl)
+        self._leaf, self._insts = {}, {}
+        self.root = Node('module', self.top, self.top, '', '', self.rtl_type(self.top), self.leaf(self.top))
+        self.total = max(self.root.count, 1)
+
+    def leaf(self, mod):
+        """leaf cells under a netlist module"""
+        if mod in self._leaf:
+            return self._leaf[mod]
+        stack, order = [mod], []
+        while stack:  # iterative post-order: hierarchies can be deep
+            m = stack.pop()
+            if m in self._leaf or m in order:
+                continue
+            order.append(m)
+            stack.extend(t for t, _ in self.mods.get(m, ()) if t in self.mods and t not in self._leaf)
+        for m in reversed(order):
+            self._leaf[m] = sum(self._leaf.get(t, 1) if t in self.mods else 1 for t, _ in self.mods[m])
+        return self._leaf[mod]
+
+    def weight(self, t):
+        return self.leaf(t) if t in self.mods else 1
+
+    def rtl_type(self, mod):
+        """RTL module of a netlist module (Genus may append a suffix when it uniquifies)"""
+        if mod in self.rtl:
+            return mod
+        best = None
+        for r in self.rtl:
+            if mod.startswith(r + '_') and (best is None or len(r) > len(best)):
+                best = r
+        return best
+
+    def rtl_insts(self, rtype):
+        if not rtype or rtype not in self.rtl:
+            return None
+        files = sorted(self.rtl[rtype], key=lambda p: -len(os.path.commonprefix([p, self.netlist])))
+        if rtype not in self._insts:
+            self._insts[rtype] = rtl_instances(files[0], rtype)
+        return self._insts[rtype]
+
+    # -- children of a node
+    def children(self, node):
+        if node.kids is not None:
+            return node.kids
+        if node.kind == 'array':
+            node.kids = node.elems
+            return node.kids
+        if node.kind == 'other':
+            node.kids = []
+            return node.kids
+        base = node.prefix + '_' if node.prefix else ''
+        scope = [(t, raw, norm(raw)) for t, raw in self.mods.get(node.mod, ())]
+        if base:
+            scope = [x for x in scope if x[2].startswith(base) or x[2] == node.prefix]
+        sub_ipath = node.ipath if node.kind == 'prefix' else node.path
+        rinsts = self.rtl_insts(node.rtl)
+        used, kids = set(), []
+        if rinsts:
+            for rtype, inst, labels in sorted(rinsts, key=lambda x: -len(x[1])):
+                rx = ''.join((re.escape(l) if l else r'(?:genblk\d+)?') + r'(?:_\d+)*_' for l, _ in labels)
+                rx = re.compile('^(' + rx + re.escape(inst) + ')(?:_|$)')
+                lead = labels[0][0] if labels and labels[0][0] else (inst if not labels else '')
+                groups = {}
+                for i, (t, raw, nm) in enumerate(scope):
+                    if i in used:
+                        continue
+                    rel = nm[len(base):]
+                    if lead and not rel.startswith(lead):
+                        continue
+                    m = rx.match(rel)
+                    if m:
+                        groups.setdefault(m.group(1), []).append(i)
+                if not groups:
+                    continue
+                elems = []
+                for g in sorted(groups, key=natkey):
+                    idx = groups[g]
+                    used.update(idx)
+                    elems.append(self._node(scope, idx, base + g, node, sub_ipath, rtype, g))
+                if len(elems) == 1:
+                    kids.append(elems[0])
+                else:
+                    lab = '.'.join(l + ('[*]' if lp else '') for l, lp in labels if l)
+                    a = Node('array', (lab + '.' if lab else '') + inst + ' [%d]' % len(elems),
+                             node.mod, None, sub_ipath, rtype, sum(e.count for e in elems))
+                    a.elems = elems
+                    for e in elems:
+                        e.parent = a
+                    kids.append(a)
+        rest = [i for i in range(len(scope)) if i not in used]
+        if not rinsts:  # no RTL: hierarchical instances, cells grouped by their first two name parts
+            groups = {}
+            for i in rest:
+                t, raw, nm = scope[i]
+                rel = nm[len(base):]
+                if t in self.mods and nm == base + rel and '_RC_CG_' not in t:
+                    groups.setdefault(('m', raw), []).append(i)
+                else:
+                    groups.setdefault(('p', '_'.join(rel.split('_')[:2])), []).append(i)
+            rest = []
+            for (k, g), idx in groups.items():
+                cnt = sum(self.weight(scope[i][0]) for i in idx)
+                if cnt * 200 < node.count:
+                    rest += idx
+                    continue
+                c = self._node(scope, idx, base + norm(g) if k == 'p' else norm(scope[idx[0]][2]),
+                               node, sub_ipath, None, g)
+                c.guess = True
+                kids.append(c)
+        kids.sort(key=lambda k: -k.count)
+        cnt = sum(self.weight(scope[i][0]) for i in rest)
+        if cnt:
+            o = Node('other', '(rest: glue logic, clock gates, small modules)', node.mod, None, sub_ipath,
+                     None, cnt)
+            kids.append(o)
+        for k in kids:
+            k.parent = node
+        node.kids = kids
+        return kids
+
+    def _node(self, scope, idx, prefix, parent, ipath, rtype, label):
+        cnt = sum(self.weight(scope[i][0]) for i in idx)
+        if len(idx) == 1:
+            t, raw, nm = scope[idx[0]]
+            if t in self.mods and nm == prefix:  # kept hierarchy
+                path = (ipath + '/' if ipath else '') + raw
+                return Node('module', label, t, '', path, rtype or self.rtl_type(t), cnt, raw)
+        return Node('prefix', label, parent.mod, prefix, ipath, rtype, cnt)
+
+    def rows(self, node):
+        """rows to show for a node: big arrays at its own level are split into their elements"""
+        out = []
+        for k in self.children(node):
+            if k.kind == 'array' and len(k.elems) <= len(PALETTE) and \
+                    all(e.count * 100 >= SPLIT_ARRAY_SHARE * node.count for e in k.elems):
+                for e in k.elems:
+                    e.name = e.full.rsplit('/', 1)[-1]
+                    out.append(e)
+            else:
+                out.append(k)
+        return out
+
+
+# ---------------------------------------------------------------- selection and output
+
+
+class Selection:
+    def __init__(self):
+        self.col = {}     # key -> palette index
+        self.nodes = {}   # key -> node
+        self.dim = True
+        self.dirty = False
+        self.out = None
+
+    def free(self):
+        used = set(self.col.values())
+        for i in range(len(PALETTE)):
+            if i not in used:
+                return i
+        return len(self.col) % len(PALETTE)
+
+    def toggle(self, n):
+        if n.kind == 'other':
+            return
+        if n.key in self.col:
+            del self.col[n.key]
+        else:
+            self.col[n.key] = self.free()
+            self.nodes[n.key] = n
+        self.dirty = True
+
+    def cycle(self, n, step):
+        if n.kind == 'other':
+            return
+        if n.key not in self.col:
+            self.toggle(n)
+            return
+        used = {v for k, v in self.col.items() if k != n.key}
+        c = self.col[n.key]
+        for _ in range(len(PALETTE)):  # next colour no other module has, if there is one
+            c = (c + step) % len(PALETTE)
+            if c not in used or len(used) >= len(PALETTE):
+                break
+        self.col[n.key] = c
+        self.dirty = True
+
+    def auto(self, design, node):
+        rows = [r for r in design.rows(node) if r.kind != 'other']
+        for r in rows:
+            self.col.pop(r.key, None)
+        pick = sorted(rows, key=lambda r: -r.count)[:AUTO_MAX]
+        pick = [r for r in pick if r.count * 100 >= AUTO_MIN_SHARE * max(node.count, 1)]
+        for r in sorted(pick, key=lambda r: rows.index(r)):
+            self.col[r.key] = self.free()
+            self.nodes[r.key] = r
+        self.dirty = True
+
+    def chosen(self):
+        ns = [self.nodes[k] for k in self.col]
+        return sorted(ns, key=lambda n: n.full.count('/'))  # parents first, so children keep their colour
+
+    def tcl(self, design):
+        lines = ['# hlcolor: %s  run %s  %s' % (design.top, design.rundir, time.strftime('%Y-%m-%d %H:%M')),
+                 '# source this file in Innovus; hlc_legend prints the colours again',
+                 'proc hlc_objs {specs} {',
+                 '    set o {}',
+                 '    foreach {k p} $specs { set o [concat $o [get_db $k $p]] }',
+                 '    return $o',
+                 '}',
+                 'proc hlc_legend {} { foreach l $::hlc_legend { puts $l } }',
+                 'gui_clear_highlight',
+                 'gui_dim_foreground -light_level %s' % ('dark' if self.dim else 'default'),
+                 'set ::hlc_legend {}',
+                 'foreach {name hex what specs} {']
+        for n in self.chosen():
+            name, hx, _ = PALETTE[self.col[n.key]]
+            sp = ' '.join('%s {%s}' % s for s in n.specs())
+            lines.append('    %-8s %s {%s} {%s}' % (name, hx, n.full, sp))
+        lines += ['} {',
+                  '    set o [hlc_objs $specs]',
+                  '    if {[llength $o]} { gui_highlight $o -color $hex }',
+                  '    lappend ::hlc_legend [format "%-8s %-60s %s" $name $what '
+                  '[expr {[llength $o] ? "[llength $o] objects" : "NOT FOUND"}]]',
+                  '}',
+                  'hlc_legend', '']
+        return '\n'.join(lines)
+
+    def write(self, design, out=None):
+        out = out or self.out
+        if out:
+            open(out, 'w').write(self.tcl(design))
+        else:
+            out = os.path.join(design.rundir, 'hl_%s.tcl' % design.top)
+            try:
+                open(out, 'w').write(self.tcl(design))
+            except OSError:  # run dir not writable: home
+                out = os.path.expanduser('~/hl_%s.tcl' % design.top)
+                open(out, 'w').write(self.tcl(design))
+        self.dirty = False
+        return out
+
+
+# ---------------------------------------------------------------- terminal UI
+
+HELP = ('space on/off  c/C colour  →/enter open  ←/bksp back  a suggest  x clear  / filter  '
+        'v chosen  d dim  w write  q quit')
+
+
+class UI:
+    def __init__(self, scr, design, sel):
+        self.s, self.d, self.sel = scr, design, sel
+        self.stack = [(design.root, 0, 0)]  # node, cursor, scroll
+        self.view_chosen = False
+        self.filter = ''
+        self.msg = 'suggested colours are switched on; w writes the Tcl file'
+        curses.curs_set(0)
+        scr.keypad(True)
+        self.pairs = []
+        if curses.has_colors():
+            curses.start_color()
+            try:
+                curses.use_default_colors()
+                bg = -1
+            except curses.error:
+                bg = curses.COLOR_BLACK
+            basic = [curses.COLOR_RED, curses.COLOR_CYAN, curses.COLOR_YELLOW, curses.COLOR_MAGENTA,
+                     curses.COLOR_GREEN, curses.COLOR_YELLOW, curses.COLOR_BLUE, curses.COLOR_MAGENTA,
+                     curses.COLOR_MAGENTA, curses.COLOR_GREEN, curses.COLOR_WHITE, curses.COLOR_RED]
+            for i, (_, _, x) in enumerate(PALETTE):
+                fg = x if curses.COLORS >= 256 else basic[i]
+                curses.init_pair(i + 1, fg, bg)
+                self.pairs.append(curses.color_pair(i + 1))
+        else:
+            self.pairs = [curses.A_BOLD] * len(PALETTE)
+
+    def rows(self):
+        if self.view_chosen:
+            rows = self.sel.chosen()
+        else:
+            rows = self.d.rows(self.stack[-1][0])
+        if self.filter:
+            rows = [r for r in rows if self.filter.lower() in r.full.lower()]
+        return rows
+
+    def put(self, y, x, txt, attr=0):
+        h, w = self.s.getmaxyx()
+        if 0 <= y < h and x < w:
+            try:
+                self.s.addnstr(y, x, txt, max(w - x - 1, 0), attr)
+            except curses.error:
+                pass
+
+    def draw(self):
+        s, d = self.s, self.d
+        s.erase()
+        h, w = s.getmaxyx()
+        self.put(0, 0, (' hlcolor   top %s   netlist %s' % (d.top, d.netlist)).ljust(w), curses.A_REVERSE)
+        self.put(1, 0, ' RTL %s   chosen %d   dim background %s   %s' % (
+            d.rtl_root or 'not found (names from the netlist only)', len(self.sel.col),
+            'on' if self.sel.dim else 'off', '(not written)' if self.sel.dirty else ''))
+        crumb = 'chosen modules (all levels)' if self.view_chosen else \
+            ' > '.join(n.name for n, _, _ in self.stack)
+        self.put(2, 0, ' ' + crumb + ('   filter: ' + self.filter if self.filter else ''), curses.A_BOLD)
+        self.put(3, 0, '  on  colour    %-52s %-10s %10s %6s' % ('module', 'found as', 'cells', 'share'),
+                 curses.A_UNDERLINE)
+        rows = self.rows()
+        node, cur, top = self.stack[-1]
+        cur = min(cur, max(len(rows) - 1, 0))
+        n_vis = max(h - 7, 1)
+        if cur < top:
+            top = cur
+        if cur >= top + n_vis:
+            top = cur - n_vis + 1
+        self.stack[-1] = (node, cur, top)
+        for k, r in enumerate(rows[top:top + n_vis]):
+            y, i = 4 + k, top + k
+            sel = r.key in self.sel.col
+            attr = curses.A_REVERSE if i == cur else 0
+            if r.kind == 'other':
+                attr |= curses.A_DIM
+            box = '[x]' if sel else ('   ' if r.kind == 'other' else '[ ]')
+            name = r.full if self.view_chosen else r.name
+            more = '▸ ' if r.kind in ('module', 'prefix', 'array') and not self.view_chosen else '  '
+            kind = {'module': 'module', 'prefix': 'prefix', 'array': 'array', 'other': ''}[r.kind]
+            if r.guess:
+                kind += '?'
+            line = '  %s %-8s  %s%-50s %-10s %10s %5.1f%%' % (
+                box, '', more, name[-50:], kind, '{:,}'.format(r.count).replace(',', ' '),
+                100.0 * r.count / d.total)
+            self.put(y, 0, line.ljust(w), attr)
+            if sel:
+                ci = self.sel.col[r.key]
+                self.put(y, 6, '██ ' + PALETTE[ci][0], self.pairs[ci] | (curses.A_BOLD if i == cur else 0))
+        self.put(h - 3, 0, '─' * (w - 1))
+        self.put(h - 2, 0, ' ' + HELP)
+        self.put(h - 1, 0, ' ' + self.msg)
+        s.refresh()
+
+    ESC = {'A': curses.KEY_UP, 'B': curses.KEY_DOWN, 'C': curses.KEY_RIGHT, 'D': curses.KEY_LEFT,
+           'H': curses.KEY_HOME, 'F': curses.KEY_END, '5~': curses.KEY_PPAGE, '6~': curses.KEY_NPAGE,
+           '1~': curses.KEY_HOME, '4~': curses.KEY_END}
+
+    def key(self):
+        k = self.s.get_wch()
+        if k != '\x1b':
+            return k
+        self.s.nodelay(True)
+        seq = ''
+        try:
+            while len(seq) < 4:
+                try:
+                    c = self.s.get_wch()
+                except curses.error:
+                    break
+                seq += c if isinstance(c, str) else ''
+                if seq[-1].isalpha() or seq[-1] == '~':
+                    break
+        finally:
+            self.s.nodelay(False)
+        if not seq:
+            return '\x1b'
+        return self.ESC.get(seq[1:] if seq[0] in '[O' else seq, None)
+
+    def ask(self, prompt):
+        h, w = self.s.getmaxyx()
+        curses.curs_set(1)
+        buf = ''
+        while True:
+            self.put(h - 1, 0, (' ' + prompt + buf).ljust(w))
+            self.s.refresh()
+            k = self.key()
+            if k in ('\n', '\r', curses.KEY_ENTER):
+                break
+            if k == '\x1b':
+                buf = None
+                break
+            if k in (curses.KEY_BACKSPACE, '\x7f', '\b'):
+                buf = buf[:-1]
+            elif isinstance(k, str) and k.isprintable():
+                buf += k
+        curses.curs_set(0)
+        return buf
+
+    def open(self, r):
+        if r.kind == 'other':
+            self.msg = 'the rest has no module to open'
+            return
+        self.msg = 'reading %s ...' % r.full
+        self.draw()
+        self.d.children(r)
+        self.stack.append((r, 0, 0))
+        self.filter = ''
+        kids = self.d.rows(r)
+        self.msg = '%d rows in %s%s' % (len(kids), r.full,
+                                       '  (no RTL found: rows guessed from names)' if any(k.guess for k in kids) else '')
+
+    def run(self):
+        while True:
+            self.draw()
+            k = self.key()
+            if os.environ.get('HLCOLOR_KEYLOG'):
+                with open(os.environ['HLCOLOR_KEYLOG'], 'a') as f:
+                    f.write('%r depth=%d view=%s filter=%r chosen=%d\n' % (k, len(self.stack), self.view_chosen,
+                                                                       self.filter, len(self.sel.col)))
+            rows = self.rows()
+            node, cur, top = self.stack[-1]
+            r = rows[cur] if rows and cur < len(rows) else None
+            h = self.s.getmaxyx()[0]
+            if k in ('q', 'Q'):
+                if self.sel.dirty:
+                    a = self.ask('write the Tcl file before quitting? [y/n] ')
+                    if a is None:
+                        continue
+                    if a.lower().startswith('y'):
+                        return self.sel.write(self.d)
+                return None
+            elif k in (curses.KEY_DOWN, 'j'):
+                cur += 1
+            elif k in (curses.KEY_UP, 'k'):
+                cur -= 1
+            elif k == curses.KEY_NPAGE:
+                cur += h - 8
+            elif k == curses.KEY_PPAGE:
+                cur -= h - 8
+            elif k in (curses.KEY_HOME, 'g'):
+                cur = 0
+            elif k in (curses.KEY_END, 'G'):
+                cur = len(rows) - 1
+            elif k == ' ' and r:
+                self.sel.toggle(r)
+                cur += 1
+            elif k == 'c' and r:
+                self.sel.cycle(r, 1)
+            elif k == 'C' and r:
+                self.sel.cycle(r, -1)
+            elif k in (curses.KEY_RIGHT, 'l', '\n', '\r', curses.KEY_ENTER) and r and not self.view_chosen:
+                self.open(r)
+                continue
+            elif k in (curses.KEY_LEFT, 'h', curses.KEY_BACKSPACE, '\x7f'):
+                if self.view_chosen:
+                    self.view_chosen = False
+                elif self.filter:
+                    self.filter = ''
+                elif len(self.stack) > 1:
+                    self.stack.pop()
+                continue
+            elif k == 'a' and not self.view_chosen:
+                self.sel.auto(self.d, node)
+                self.msg = 'suggested colours for %s' % node.name
+            elif k == 'x':
+                self.sel.col.clear()
+                self.sel.dirty = True
+                self.msg = 'all colours cleared'
+            elif k == 'd':
+                self.sel.dim = not self.sel.dim
+                self.sel.dirty = True
+            elif k == 'v':
+                self.view_chosen = not self.view_chosen
+                self.filter = ''
+                cur = 0
+            elif k == '/':
+                f = self.ask('filter: ')
+                if f is not None:
+                    self.filter = f
+                cur = 0
+            elif k == 'w':
+                out = self.sel.write(self.d)
+                self.msg = 'wrote %s   in Innovus: source %s' % (out, out)
+            elif k == curses.KEY_RESIZE:
+                pass
+            self.stack[-1] = (node, max(0, min(cur, len(self.rows()) - 1)), top)
+
+
+# ---------------------------------------------------------------- main
+
+
+def find_level(design, spec):
+    node = design.root
+    for part in [p for p in spec.split('/') if p]:
+        rows = design.rows(node)
+        hit = [r for r in rows if r.name == part] or [r for r in rows if part in r.name]
+        if not hit:
+            sys.exit('hlcolor: no row %r under %s (rows: %s)' % (part, node.name, ', '.join(r.name for r in rows)))
+        node = hit[0]
+    return node
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('run', help='run dir (fp/impl), workarea, syn dir or netlist .v')
+    ap.add_argument('--list', nargs='?', const='', metavar='PATH', help='print the rows of one level and exit')
+    ap.add_argument('--auto', action='store_true', help='write the suggested colouring and exit')
+    ap.add_argument('-o', '--out', help='Tcl file to write (default <run>/hl_<top>.tcl)')
+    ap.add_argument('--refresh', action='store_true', help='reread netlist and RTL, ignore the cache')
+    a = ap.parse_args()
+    d = Design(a.run, a.refresh, log=lambda m: print(m, file=sys.stderr))
+    sel = Selection()
+    sel.auto(d, d.root)
+    if a.list is not None:
+        node = find_level(d, a.list)
+        if node is not d.root:
+            sel = Selection()
+            sel.auto(d, node)
+        print('%s  (%s, %s cells)' % (node.full, node.kind, node.count))
+        for r in d.rows(node):
+            c = PALETTE[sel.col[r.key]][0] if r.key in sel.col else ''
+            print('  %-8s %-55s %-7s %10d %5.1f%%   %s' % (c, r.name, r.kind + ('?' if r.guess else ''),
+                                                      r.count, 100.0 * r.count / d.total,
+                                                      ' '.join('%s:%s' % s for s in r.specs())[:120]))
+        return
+    if a.auto:
+        print(sel.write(d, a.out))
+        return
+    sel.out = a.out
+    os.environ.setdefault('ESCDELAY', '25')
+    out = curses.wrapper(lambda scr: UI(scr, d, sel).run())
+    if out:
+        print('wrote %s\nin Innovus:  source %s' % (out, out))
+
+
+if __name__ == '__main__':
+    main()
