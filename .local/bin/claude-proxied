@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run claude in a network namespace whose only ways out are the local proxy,
 # CLAUDE_LAN_NETS addresses (any port) and CLAUDE_SSH_PORTS (any address).
-PROXY_PORT="${PROXY_PORT:-2080}"
+PROXY_PORT="${PROXY_PORT:-2083}"
 LAN_NETS="${CLAUDE_LAN_NETS:-192.168.0.0/16}"
 SSH_PORTS="${CLAUDE_SSH_PORTS-22}"  # empty: no SSH exception
 LAN_PORT=2081
@@ -10,6 +10,9 @@ RUN="${XDG_RUNTIME_DIR:-/tmp}"
 SOCK="$RUN/claude-proxy-$$.sock"
 LAN_SOCK="$RUN/claude-lan-$$.sock"
 BRIDGE="$(dirname "$(readlink -f "$0")")/claude-lan-bridge"
+CHECK="$(dirname "$(readlink -f "$0")")/claude-proxied-check"
+[ -x "$CHECK" ] || { echo "claude-proxied: preflight script not found: $CHECK" >&2; exit 1; }
+PROXY_PORT="$PROXY_PORT" "$CHECK" --quiet || exit 1
 # Root-owned files look owned by nobody inside the namespace, and ssh refuses
 # such included configs, so each file ssh_config includes is replaced by a copy
 # we own.
