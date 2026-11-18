@@ -127,6 +127,32 @@ marks its window in the status bar, and shows `Claude [win]: done` or the
 outside tmux. The `Stop` and `Notification` hooks that call it are in
 `.claude/settings.json`.
 
+## Claude Code proxy-only sandbox
+
+`claude-proxied` runs Claude Code in a bwrap network namespace whose only way
+out is a local proxy (plus LAN, SSH and a few host loopback ports). By default
+the proxy is a dedicated xray instance pinned to one fixed exit node, so
+switching the main Throne VPN profile does not change Claude's egress IP.
+`PROXY_PORT=2080 claude` falls back to the main Throne proxy.
+
+The pinned proxy is xray (binary from <https://github.com/XTLS/Xray-core/releases>,
+verify sha256 against the `.dgst`) installed to `~/.local/bin/xray`. Its config
+`~/.config/claude-pinned/config.json` lives outside this repo on purpose: it
+contains the node's credentials. The node's parameters (the `outbounds[0]`
+block) are the same xray-format JSON that Throne keeps in its `profiles`
+table; to change Claude's exit node, replace that block and run
+`systemctl --user restart claude-xray-proxy`.
+
+```sh
+sudo dnf install -y bubblewrap socat nftables
+systemctl --user enable --now claude-xray-proxy
+```
+
+`claude-proxied` runs `claude-proxied-check --quiet` before spawning anything
+and aborts with install hints if something is missing on the machine. The full
+report, including a live egress test through the proxy, is
+`claude-proxied-check`.
+
 ## Obsidian
 
 `Obsidian/.obsidian` is the config of the vault `~/Obsidian`. Unlike the

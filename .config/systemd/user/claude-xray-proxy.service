@@ -1,0 +1,12 @@
+[Unit]
+Description=Pinned xray proxy for Claude (fixed XHTTP egress, port 2083)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/xray run -c %h/.config/claude-pinned/config.json
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

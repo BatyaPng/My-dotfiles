@@ -1,0 +1,86 @@
+#!/bin/bash
+# Preflight for claude-proxied: verifies the sandbox dependencies and the
+# pinned proxy on this machine. Direct run: full report plus an egress test
+# through the proxy. --quiet: fast checks only, silent on success
+# (claude-proxied runs it before spawning anything).
+set -u
+
+QUIET=0
+[ "${1:-}" = "--quiet" ] && QUIET=1
+PROXY_PORT="${PROXY_PORT:-2083}"
+SELF_DIR="$(dirname "$(readlink -f "$0")")"
+
+if command -v dnf >/dev/null 2>&1; then PM=dnf
+elif command -v apt-get >/dev/null 2>&1; then PM=apt
+else PM=""
+fi
+
+OK=()
+FAIL=()
+
+pass() { OK+=("$1"); }
+fail() { FAIL+=("$1"); }
+
+if [ "$(uname -s)" = "Linux" ]; then
+    pass "platform: Linux"
+else
+    fail "platform: $(uname -s) (bwrap network namespaces are Linux-only)"
+fi
+
+for pair in bwrap:bubblewrap socat:socat nft:nftables python3:python3 setpriv:util-linux; do
+    bin="${pair%%:*}"
+    pkg="${pair##*:}"
+    if command -v "$bin" >/dev/null 2>&1; then
+        pass "binary: $bin"
+    elif [ -n "$PM" ]; then
+        fail "binary: $bin missing (sudo $PM install -y $pkg)"
+    else
+        fail "binary: $bin missing (install the $pkg package)"
+    fi
+done
+
+BRIDGE="$SELF_DIR/claude-lan-bridge"
+if [ -x "$BRIDGE" ]; then
+    pass "script: claude-lan-bridge"
+else
+    fail "script: claude-lan-bridge missing or not executable: $BRIDGE"
+fi
+
+# /dev/tcp connect on loopback: instant refused when nothing listens.
+if (exec 3<>"/dev/tcp/127.0.0.1/$PROXY_PORT") 2>/dev/null; then
+    pass "proxy: 127.0.0.1:$PROXY_PORT is reachable"
+elif systemctl --user cat claude-xray-proxy.service >/dev/null 2>&1; then
+    fail "proxy: 127.0.0.1:$PROXY_PORT refuses connections (start the pinned proxy: systemctl --user start claude-xray-proxy)"
+else
+    fail "proxy: 127.0.0.1:$PROXY_PORT refuses connections (no claude-xray-proxy unit here; start the proxy or point PROXY_PORT at the right port)"
+fi
+
+if [ "$QUIET" -eq 0 ]; then
+    if command -v curl >/dev/null 2>&1; then
+        ip="$(curl -x "http://127.0.0.1:$PROXY_PORT" -s -m 10 https://api.ipify.org 2>/dev/null)" || ip=""
+        if [ -n "$ip" ]; then
+            pass "egress: $ip via 127.0.0.1:$PROXY_PORT"
+        else
+            fail "egress: curl through 127.0.0.1:$PROXY_PORT to api.ipify.org failed (proxy down, node dead, or no internet)"
+        fi
+    else
+        pass "egress: skipped (curl not installed)"
+    fi
+fi
+
+if [ "$QUIET" -eq 1 ]; then
+    if [ "${#FAIL[@]}" -gt 0 ]; then
+        printf 'claude-proxied-check: %s\n' "${FAIL[@]}" >&2
+        exit 1
+    fi
+    exit 0
+fi
+
+for r in "${OK[@]}"; do printf 'OK    %s\n' "$r"; done
+for r in "${FAIL[@]}"; do printf 'FAIL  %s\n' "$r"; done
+if [ "${#FAIL[@]}" -eq 0 ]; then
+    echo "all checks passed"
+    exit 0
+fi
+echo "${#FAIL[@]} check(s) failed" >&2
+exit 1
