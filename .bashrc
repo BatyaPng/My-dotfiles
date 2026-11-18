@@ -213,8 +213,9 @@ code() {
   command code "$@"
 }
 
-# Claude Code: no direct network, only the proxy (see ~/.local/bin/claude-proxied)
-alias claude='claude-proxied claude'
+# Claude Code: no direct network, only the proxy (see ~/.local/bin/claude-proxied).
+# Only where the pinned proxy is set up: its node config lives outside the repo.
+[ -f ~/.config/claude-pinned/config.json ] && alias claude='claude-proxied claude'
 
 # Apply the saved state whenever a new terminal opens
 [ -f "$PROXY_STATE_FILE" ] && _proxy_set

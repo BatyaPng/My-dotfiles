@@ -12,6 +12,7 @@ tmux window names stay. Skips busy sessions and the pane this runs from.
 import argparse, glob, json, os, shlex, signal, subprocess, sys, time
 
 WAIT = 30
+PINNED_CFG = os.path.expanduser("~/.config/claude-pinned/config.json")
 
 
 def tmux(*args):
@@ -50,7 +51,9 @@ def restart(s, pane_pid, pane):
         time.sleep(0.5)
     else:
         return False  # never type into a pane that still runs something
-    cmd = ["claude-proxied", "claude", "--resume", s["sessionId"]]
+    cmd = ["claude", "--resume", s["sessionId"]]
+    if os.path.isfile(PINNED_CFG):  # same check as the claude alias in .bashrc
+        cmd = ["claude-proxied", *cmd]
     if s.get("name") and s.get("nameSource") != "derived":
         cmd += ["--name", s["name"]]
     line = f"cd {shlex.quote(s['cwd'])} && {shlex.join(cmd)}"
