@@ -39,11 +39,36 @@ for pair in bwrap:bubblewrap socat:socat nft:nftables python3:python3 setpriv:ut
     fi
 done
 
+# The LAN bridge is only needed where the sandbox wrapper itself runs.
 BRIDGE="$SELF_DIR/claude-lan-bridge"
-if [ -x "$BRIDGE" ]; then
-    pass "script: claude-lan-bridge"
+if [ -x "$SELF_DIR/claude-proxied" ]; then
+    if [ -x "$BRIDGE" ]; then
+        pass "script: claude-lan-bridge"
+    else
+        fail "script: claude-lan-bridge missing or not executable: $BRIDGE"
+    fi
 else
-    fail "script: claude-lan-bridge missing or not executable: $BRIDGE"
+    pass "script: claude-lan-bridge (skipped: no claude-proxied wrapper here)"
+fi
+
+# Pinned proxy stack (xray binary + node config), only required when the
+# pinned port is the target; PROXY_PORT=2080 falls back to the main VPN.
+PINNED_PORT=2083
+XRAY_BIN="$HOME/.local/bin/xray"
+PINNED_CFG="$HOME/.config/claude-pinned/config.json"
+if [ "$PROXY_PORT" = "$PINNED_PORT" ]; then
+    if [ -x "$XRAY_BIN" ]; then
+        pass "pinned: xray binary ($XRAY_BIN)"
+    else
+        fail "pinned: xray missing at $XRAY_BIN (install from XTLS/Xray-core releases, verify sha256)"
+    fi
+    if [ ! -r "$PINNED_CFG" ]; then
+        fail "pinned: config missing at $PINNED_CFG (node credentials, outside this repo; copy it from a machine that has it)"
+    elif command -v python3 >/dev/null 2>&1 && ! python3 -m json.tool "$PINNED_CFG" >/dev/null 2>&1; then
+        fail "pinned: config $PINNED_CFG is not valid JSON"
+    else
+        pass "pinned: config ($PINNED_CFG)"
+    fi
 fi
 
 # /dev/tcp connect on loopback: instant refused when nothing listens.

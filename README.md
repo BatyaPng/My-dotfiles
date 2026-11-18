@@ -144,14 +144,21 @@ table; to change Claude's exit node, replace that block and run
 `systemctl --user restart claude-xray-proxy`.
 
 ```sh
-sudo dnf install -y bubblewrap socat nftables
+sudo dnf install -y bubblewrap socat nftables   # Fedora
+sudo apt install -y bubblewrap socat nftables   # Ubuntu
 systemctl --user enable --now claude-xray-proxy
 ```
 
 `claude-proxied` runs `claude-proxied-check --quiet` before spawning anything
-and aborts with install hints if something is missing on the machine. The full
-report, including a live egress test through the proxy, is
-`claude-proxied-check`.
+and aborts with install hints if something is missing on the machine: the
+sandbox binaries, the LAN bridge, the pinned stack (the xray binary and the
+node config, when the target port is the pinned 2083) and the proxy port. The
+full report, `claude-proxied-check`, adds a live egress test through the proxy.
+
+On another machine, copy `~/.local/bin/xray` and
+`~/.config/claude-pinned/config.json` over (both are outside this repo), then
+`systemctl --user enable --now claude-xray-proxy` (user unit, not
+`sudo systemctl`).
 
 ## Obsidian
 
