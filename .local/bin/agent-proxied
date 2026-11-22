@@ -1,0 +1,117 @@
+#!/bin/bash
+# Run an agent in a network namespace whose only ways out are the local proxy,
+# CLAUDE_LAN_NETS addresses (any port) and CLAUDE_SSH_PORTS (any address).
+DIR="$(dirname "$(readlink -f "$0")")"
+MANAGER="$DIR/agent-proxy-manager.py"
+if [ "$#" -eq 0 ]; then
+  [ -t 0 ] || { echo 'Usage: agent-proxied {codex|claude} [args...] | --tui | --check' >&2; exit 2; }
+  set -- --tui
+fi
+if [ "$#" -eq 1 ] && [[ $1 = --help || $1 = -h ]]; then
+  echo 'Usage: agent-proxied {codex|claude|COMMAND} [args...]'
+  echo '       agent-proxied --tui | --check | --setup-docker | --legacy COMMAND [args...]'
+  exit 0
+fi
+if ! command -v python3 >/dev/null; then
+  packages=(python3)
+  pm=""
+  ip_pkg=iproute2
+  if command -v dnf >/dev/null; then pm=dnf; ip_pkg=iproute
+  elif command -v apt-get >/dev/null; then pm=apt-get
+  fi
+  for pair in bwrap:bubblewrap socat:socat nft:nftables ip:"$ip_pkg" setpriv:util-linux systemctl:systemd; do
+    command -v "${pair%%:*}" >/dev/null || packages+=("${pair#*:}")
+  done
+  echo "Install missing packages: ${pm:+sudo $pm install }${packages[*]}" >&2
+  exit 1
+fi
+case "$#:${1:-}" in
+  1:--setup-docker) exec python3 -I "$MANAGER" setup-docker ;;
+  1:--tui) exec python3 -I "$MANAGER" tui ;;
+  1:--check) exec python3 -I "$MANAGER" check ;;
+esac
+case "${1:-}" in
+  --legacy|--) shift ;;
+  codex|claude) exec python3 -I "$MANAGER" docker-agent "$@" ;;
+esac
+[ "$#" -gt 0 ] || { echo 'Expected a command' >&2; exit 2; }
+PROXY_PORT="${PROXY_PORT:-2083}"
+LAN_NETS="${CLAUDE_LAN_NETS:-192.168.0.0/16}"
+SSH_PORTS="${CLAUDE_SSH_PORTS-22}"  # empty: no SSH exception
+LAN_PORT=2081
+HOST_PORTS="${CLAUDE_HOST_PORTS-8765}"  # host loopback ports reachable inside (rc dashboard)
+RUN="${XDG_RUNTIME_DIR:-/tmp}"
+SOCK="$RUN/claude-proxy-$$.sock"
+LAN_SOCK="$RUN/claude-lan-$$.sock"
+BRIDGE="$(dirname "$(readlink -f "$0")")/claude-lan-bridge"
+python3 -I "$MANAGER" preflight "$1" || exit 1
+# Root-owned files look owned by nobody inside the namespace, and ssh refuses
+# such included configs, so each file ssh_config includes is replaced by a copy
+# we own.
+ssh_includes() {  # FILE DEPTH: FILE and every file it includes
+  echo "$1"
+  [ "$2" -lt 5 ] || return
+  local inc g
+  for inc in $(awk 'tolower($1) == "include" { for (i = 2; i <= NF; i++) print $i }' "$1" 2>/dev/null); do
+    [[ $inc == /* ]] || inc="/etc/ssh/$inc"
+    for g in $inc; do [ -f "$g" ] && ssh_includes "$g" $(($2 + 1)); done
+  done
+}
+SSH_D="$RUN/claude-ssh-$$"
+SSH_BIND=()
+if [ -f /etc/ssh/ssh_config ] && mkdir -m 700 "$SSH_D"; then
+  i=0
+  for f in $(ssh_includes /etc/ssh/ssh_config 0 | xargs -r readlink -f | sort -u); do
+    cp "$f" "$SSH_D/$i" && chmod 644 "$SSH_D/$i" && SSH_BIND+=(--ro-bind "$SSH_D/$i" "$f")
+    i=$((i + 1))
+  done
+fi
+socat -lf /dev/null UNIX-LISTEN:"$SOCK",fork TCP:127.0.0.1:"$PROXY_PORT" &
+PROXY_BRIDGE=$!
+HOST_BRIDGES=""
+for p in $HOST_PORTS; do
+  socat -lf /dev/null UNIX-LISTEN:"$RUN/claude-host-$$-$p.sock",fork TCP:127.0.0.1:"$p" &
+  HOST_BRIDGES+=" $!"
+done
+python3 -I "$BRIDGE" outer "$LAN_SOCK" "$LAN_NETS" "$SSH_PORTS" &
+LAN_BRIDGE=$!
+trap 'kill $PROXY_BRIDGE $LAN_BRIDGE $HOST_BRIDGES 2>/dev/null; rm -rf "$SOCK" "$LAN_SOCK" "$SSH_D" "$RUN"/claude-host-$$-*.sock' EXIT
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -S "$SOCK" ] && [ -S "$LAN_SOCK" ] && break; sleep 0.1; done
+export HOST_PORTS RUN WPID=$$ LAN_NETS SSH_PORTS LAN_PORT LAN_SOCK SOCK BRIDGE
+bwrap --dev-bind / / "${SSH_BIND[@]}" --unshare-user --unshare-net --die-with-parent \
+  --cap-add CAP_NET_ADMIN --cap-add CAP_NET_BIND_SERVICE \
+  --setenv HTTP_PROXY http://127.0.0.1:2080 --setenv HTTPS_PROXY http://127.0.0.1:2080 \
+  --setenv http_proxy http://127.0.0.1:2080 --setenv https_proxy http://127.0.0.1:2080 \
+  --setenv no_proxy localhost,127.0.0.1,::1,.baikal.int --setenv NO_PROXY localhost,127.0.0.1,::1,.baikal.int \
+  bash -c '
+    socat -lf /dev/null TCP-LISTEN:2080,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:"$SOCK" &
+    for p in $HOST_PORTS; do
+      socat -lf /dev/null TCP-LISTEN:$p,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:"$RUN/claude-host-$WPID-$p.sock" &
+    done
+    python3 -I "$BRIDGE" inner "$LAN_SOCK" "$LAN_PORT" &
+    ip addr add 169.254.1.1/32 dev lo || exit 1  # a loopback source breaks the redirected replies
+    ip route add default dev lo src 169.254.1.1 || exit 1
+    rules=""
+    for net in ${LAN_NETS//,/ }; do
+      rules+="ip daddr $net meta l4proto tcp redirect to :$LAN_PORT"$'"'"'\n'"'"'
+    done
+    [ -n "$SSH_PORTS" ] && rules+="tcp dport { $SSH_PORTS } redirect to :$LAN_PORT"
+    nft -f - <<NFT || exit 1
+table ip claude {
+  chain out {
+    type nat hook output priority -100; policy accept;
+    $rules
+  }
+  chain refuse {
+    type filter hook output priority 0; policy accept;
+    ip daddr { 127.0.0.0/8, 169.254.1.1 } accept
+    meta l4proto tcp reject with tcp reset
+    reject
+  }
+}
+NFT
+    sleep 0.3
+    setpriv --inh-caps=-all --ambient-caps=-all "$@"
+    rc=$?
+    kill $(jobs -p) 2>/dev/null
+    exit $rc' bash "$@"

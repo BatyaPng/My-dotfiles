@@ -127,38 +127,123 @@ marks its window in the status bar, and shows `Claude [win]: done` or the
 outside tmux. The `Stop` and `Notification` hooks that call it are in
 `.claude/settings.json`.
 
-## Claude Code proxy-only sandbox
+## Docker workflow for Claude Code, Codex and Firefox
 
-`claude-proxied` runs Claude Code in a bwrap network namespace whose only way
-out is a local proxy (plus LAN, SSH and a few host loopback ports). By default
-the proxy is a dedicated xray instance pinned to one fixed exit node, so
-switching the main Throne VPN profile does not change Claude's egress IP.
-`PROXY_PORT=2080 claude` falls back to the main Throne proxy.
-
-The pinned proxy is xray (binary from <https://github.com/XTLS/Xray-core/releases>,
-verify sha256 against the `.dgst`) installed to `~/.local/bin/xray`. Its config
-`~/.config/claude-pinned/config.json` lives outside this repo on purpose: it
-contains the node's credentials. The node's parameters (the `outbounds[0]`
-block) are the same xray-format JSON that Throne keeps in its `profiles`
-table; to change Claude's exit node, replace that block and run
-`systemctl --user restart claude-xray-proxy`.
+On Fedora, install the official Docker Engine packages and configure the
+per-user daemon. The launcher connects to the rootless socket in
+`$XDG_RUNTIME_DIR/docker.sock`. Setup builds both images from Ubuntu 24.04 LTS. The agents image
+includes the native Linux Codex and Claude executables already installed on
+this PC. The browser image installs Firefox from Mozilla’s signed APT
+repository. Re-run setup after updating the CLIs or to rebuild older Fedora
+images. The existing Docker volumes retain logins and browser data. Build
+downloads use Docker’s normal network and require access to Docker Hub,
+Ubuntu package mirrors, and packages.mozilla.org. [Fedora installation](https://docs.docker.com/engine/install/fedora/)
+and [rootless prerequisites](https://docs.docker.com/engine/security/rootless/).
 
 ```sh
-sudo dnf install -y bubblewrap socat nftables   # Fedora
-sudo apt install -y bubblewrap socat nftables   # Ubuntu
-systemctl --user enable --now claude-xray-proxy
+sudo dnf config-manager addrepo --from-repofile https://download.docker.com/linux/fedora/docker-ce.repo
+sudo dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-ce-rootless-extras
+dockerd-rootless-setuptool.sh install
+systemctl --user enable --now docker
+agent-proxied --setup-docker
+agent-proxied --check
+agent-proxied --tui
 ```
 
-`claude-proxied` runs `claude-proxied-check --quiet` before spawning anything
-and aborts with install hints if something is missing on the machine: the
-sandbox binaries, the LAN bridge, the pinned stack (the xray binary and the
-node config, when the target port is the pinned 2083) and the proxy port. The
-full report, `claude-proxied-check`, adds a live egress test through the proxy.
+Clone and push from your host terminal using your existing Git credentials.
+For an existing checkout, start at the `cd` step. Open a new interactive Bash
+shell for the `codex` and `claude` aliases, or call `agent-proxied codex`
+directly. Replace the example repository URL and feature branch name.
 
-On another machine, copy `~/.local/bin/xray` and
-`~/.config/claude-pinned/config.json` over (both are outside this repo), then
-`systemctl --user enable --now claude-xray-proxy` (user unit, not
-`sudo systemctl`).
+```sh
+mkdir -p ~/Work
+git clone git@github.com:OWNER/REPO.git ~/Work/my-project
+cd ~/Work/my-project
+git switch -c feature/my-change
+codex login --device-auth   # first Codex login
+codex                       # or: claude, then follow the login instructions
+git status --short
+git diff
+git add -p                  # use git add -- path/to/file for new files
+git diff --cached
+git commit -m "Describe the change"
+git push -u origin HEAD
+```
+
+The selected checkout is mounted read-write at `/workspace`. Launching from a
+subdirectory preserves that working directory. Linked worktrees also receive
+their shared Git metadata. Outside Git, the current directory becomes the
+workspace. Starting an agent directly from `~` mounts your entire host home
+read-write at `/workspace`, including hidden files and credentials. Each
+agent gets its own persistent home volume at `/home/agent`. Container UID 0
+maps to the invoking host user under rootless Docker, preserving host ownership
+of edits. The containers drop capabilities, use a private process namespace,
+and disable SELinux container labeling to use the existing workspace and user
+sockets without relabeling them. Add any project-specific build tools to the
+agents stage of the Dockerfile and rebuild.
+
+Each agent or Firefox session gets all available physical cores except one
+(including its sibling threads) and the machine's usable RAM minus 1 GiB.
+The launcher keeps the only core on single-core machines. Every session
+launched with the same available cores leaves the same core free. RAM caps
+apply independently, and swap remains available subject to host policy.
+Check the calculated limits with `agent-proxied --check`. In a container,
+`nproc` shows the available threads and `cat /sys/fs/cgroup/memory.max`
+shows its RAM cap in bytes. Tools reading `/proc/meminfo` can show host RAM.
+
+Rebuild both images with `agent-proxied --setup-docker` after upgrading to
+the resource-aware launcher. Rootless Docker needs cgroup v2, the systemd
+driver, and delegated `cpuset` and `memory` controllers. If either controller
+is missing, check the delegation for `user@.service` and restart the user
+Docker daemon after applying the systemd change. [Docker rootless resource limits](https://docs.docker.com/engine/security/rootless/tips/#limiting-resources)
+
+In the picker use arrows to highlight a profile, **Enter** to set the
+default for new agents, **a** to add a VLESS link, **d** to delete a saved profile, **e** to edit the timezone
+and hostname, **r** to refresh, and **q** to quit. Choose an IANA timezone
+once (for example, `Europe/Berlin`). Each profile gets a stable, editable
+hostname and uses `en_US.UTF-8` in the container and `en-US` in Firefox.
+An interactive first launch prompts for a missing timezone. Set it with
+**e** before a scripted launch.
+
+Each session starts a private host Xray process from its selected profile.
+Switching the default or editing a profile only affects future Docker
+sessions. The egress check measures the shared default proxy on port 2083.
+Use `PROXY_PORT=2080 agent-proxied --legacy claude` for a custom listener.
+
+**f** launches Firefox on Wayland through the highlighted exit, with its own
+Xray process and Docker volume. When opening an existing proxied Firefox
+profile for the first time, close its windows and choose whether to copy its
+cookies, saved logins, and history. Its cache is rebuilt inside the volume.
+A failed copy can be retried. Each profile runs one browser session at a time.
+
+Containers use loopback-only networking. Their local proxy listener reaches
+the host proxy through one private Unix socket. Xray credentials stay in
+`~/.config/claude-pinned/` on the host. Only Firefox receives the Wayland
+display socket. To use the existing host CLIs with LAN and SSH access, run
+`agent-proxied --legacy claude` or `agent-proxied --legacy codex`.
+`claude-proxied` remains available for existing Bubblewrap callers.
+
+On first use the picker saves the installed first outbound as **Original**.
+Import a VLESS link with raw/TCP, WebSocket, gRPC or XHTTP transport.
+For an existing config the picker replaces only its first outbound and
+preserves its tag. For a new installation, activating the first profile
+creates an HTTP listener on 127.0.0.1:2083. The config and saved profiles
+contain credentials and belong in the private `~/.config/claude-pinned/`
+directory outside the repository.
+
+Install the [Xray-core release binary](https://github.com/XTLS/Xray-core/releases)
+at `~/.local/bin/xray` after verifying its checksum against the release digest.
+Install the dotfiles user unit and run:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable claude-xray-proxy.service
+```
+
+The picker starts the service when activating a profile. Use
+`agent-proxied --check` for a full report and a bounded egress probe.
+Normal launches run only local preflight checks. Set `PROXY_PORT` to use
+another local proxy for a legacy launch or a diagnostic report.
 
 ## Obsidian
 

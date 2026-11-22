@@ -2,3 +2,4 @@
 ^/\.stowrc$
 ^/\.stow-local-ignore$
 ^/README.*
+^/tests($|/)
